@@ -398,18 +398,17 @@ function App() {
           >
             <span aria-hidden>⬆</span>
           </button>
+          <button
+            className="inline-flex items-center gap-1 rounded-xl border border-violet-500/70 bg-violet-500/15 px-3 py-1.5 text-xs font-semibold text-violet-200"
+            onClick={() => setIsTagEditorOpen(true)}
+            aria-label="タグ編集"
+            title="タグ編集"
+          >
+            タグ
+          </button>
           <input ref={fileRef} hidden type="file" accept=".json,application/json" onChange={onImport} />
         </div>
 
-        <div className="mt-2 flex items-center justify-between rounded-2xl border border-slate-700/70 bg-slate-800/40 p-2">
-          <p className="text-xs font-semibold text-slate-300">タグ管理</p>
-          <button
-            className="rounded-lg border border-slate-500 px-2 py-1 text-[11px] font-semibold text-slate-200"
-            onClick={() => setIsTagEditorOpen(true)}
-          >
-            タグ編集
-          </button>
-        </div>
       </section>
 
       {isTagEditorOpen && (
