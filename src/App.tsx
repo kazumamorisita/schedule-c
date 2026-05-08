@@ -689,7 +689,7 @@ function App() {
                   />
                   <input
                     value={tag.name}
-                    className="rounded-md bg-slate-700 px-2 py-1.5 text-xs"
+                    className="rounded-md bg-slate-700 px-2 py-1.5 text-base"
                     onChange={(e) => persistTags(tags.map((t) => (t.id === tag.id ? { ...t, name: e.target.value } : t)))}
                   />
                   <button
@@ -779,12 +779,12 @@ function ScheduleCard({
         </button>
       </div>
       <input
-        className="w-full rounded-lg bg-slate-700 px-2 py-1 text-sm"
+        className="w-full rounded-lg bg-slate-700 px-2 py-1 text-base"
         value={schedule.title}
         onChange={(e) => onUpdate({ ...schedule, title: e.target.value })}
       />
       <textarea
-        className="w-full rounded-lg bg-slate-700 px-2 py-1 text-sm"
+        className="w-full rounded-lg bg-slate-700 px-2 py-1 text-base"
         rows={2}
         value={schedule.description}
         onChange={(e) => onUpdate({ ...schedule, description: e.target.value })}
@@ -792,20 +792,20 @@ function ScheduleCard({
       <div className="grid grid-cols-2 gap-2">
         <input
           type="time"
-          className="rounded-lg bg-slate-700 px-2 py-1 text-sm"
+          className="rounded-lg bg-slate-700 px-2 py-1 text-base"
           value={schedule.startTime}
           onChange={(e) => onUpdate({ ...schedule, startTime: e.target.value })}
         />
         <input
           type="time"
-          className="rounded-lg bg-slate-700 px-2 py-1 text-sm"
+          className="rounded-lg bg-slate-700 px-2 py-1 text-base"
           value={schedule.endTime}
           onChange={(e) => onUpdate({ ...schedule, endTime: e.target.value })}
         />
       </div>
       <div className="grid grid-cols-2 gap-2">
         <select
-          className="rounded-lg bg-slate-700 px-2 py-1 text-sm"
+          className="rounded-lg bg-slate-700 px-2 py-1 text-base"
           value={schedule.tagId}
           onChange={(e) => onUpdate({ ...schedule, tagId: e.target.value })}
         >
@@ -816,7 +816,7 @@ function ScheduleCard({
           ))}
         </select>
         <select
-          className="rounded-lg bg-slate-700 px-2 py-1 text-sm"
+          className="rounded-lg bg-slate-700 px-2 py-1 text-base"
           value={schedule.repeat}
           onChange={(e) => onUpdate({ ...schedule, repeat: e.target.value as Repeat })}
         >
