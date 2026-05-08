@@ -193,8 +193,11 @@ function App() {
   };
 
   const onPointerUp = () => {
-    if (sheetOffset > 120) setSheetOpen(false);
-    if (sheetOffset < 40) setSheetOpen(true);
+    if (sheetOpen) {
+      setSheetOpen(sheetOffset <= 80);
+    } else {
+      setSheetOpen(sheetOffset < -80);
+    }
     setSheetOffset(0);
     dragStartY.current = null;
   };
@@ -272,8 +275,6 @@ function App() {
       <section className="h-[calc(100vh-120px)] overflow-hidden rounded-3xl border border-slate-700/50 bg-slate-900/75 p-3 pb-4 shadow-soft backdrop-blur md:h-auto md:overflow-visible md:pb-6 md:p-6">
         <header className="mb-4 space-y-2">
           <div className="min-w-0">
-            <h1 className="text-2xl font-bold">Smart Schedule</h1>
-            <p className="text-sm text-slate-300">常時カレンダー表示 + スワイプ可能な詳細ビュー</p>
             <p className="mt-1 text-base font-semibold text-cyan-300 md:text-lg">{currentMonthLabel}</p>
           </div>
           <div className="space-y-2">
@@ -468,17 +469,32 @@ function App() {
         style={{ transform: `translateY(${sheetOpen ? sheetOffset : collapsedSheetY + sheetOffset}px)` }}
       >
         <div
-          className="mx-auto mb-4 h-1.5 w-16 touch-none rounded-full bg-slate-600"
-          onPointerDown={(e) => onPointerDown(e.clientY)}
-          onTouchStart={(e) => onPointerDown(e.touches[0].clientY)}
-          onTouchMove={(e) => onPointerMove(e.touches[0].clientY)}
-          onTouchEnd={onPointerUp}
-        />
-        <div className="mb-3 flex items-center justify-between">
+          className="mb-3 touch-none select-none"
+          onPointerDown={(e) => {
+            e.currentTarget.setPointerCapture(e.pointerId);
+            onPointerDown(e.clientY);
+          }}
+          onPointerMove={(e) => onPointerMove(e.clientY)}
+          onPointerUp={(e) => {
+            if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+              e.currentTarget.releasePointerCapture(e.pointerId);
+            }
+            onPointerUp();
+          }}
+          onPointerCancel={(e) => {
+            if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+              e.currentTarget.releasePointerCapture(e.pointerId);
+            }
+            onPointerUp();
+          }}
+        >
+          <div className="mx-auto mb-4 h-1.5 w-16 rounded-full bg-slate-600" />
+          <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">{selectedDate} の予定</h2>
           <button className="rounded-lg bg-cyan-500 px-3 py-1.5 text-sm font-semibold text-slate-950" onClick={onCreateSchedule}>
             予定追加
           </button>
+          </div>
         </div>
         <div className="max-h-[48vh] space-y-2 overflow-y-auto overscroll-contain touch-pan-y pr-1">
           {dayItems.map((item) => (
