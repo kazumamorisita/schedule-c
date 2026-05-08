@@ -18,6 +18,8 @@ type Schedule = {
   tagId: string;
   repeat: Repeat;
   reminderMinutes: number;
+  location: string;
+  url: string;
 };
 
 type LegacyEvent = {
@@ -64,7 +66,9 @@ const defaultData: Schedule[] = [
     endTime: "10:30",
     tagId: "work",
     repeat: "weekly",
-    reminderMinutes: 0
+    reminderMinutes: 0,
+    location: "",
+    url: ""
   }
 ];
 
@@ -304,7 +308,10 @@ function App() {
         const tag = tags.find((t) => t.id === s.tagId);
         ids.push(
           setTimeout(async () => {
-            const body = `${s.startTime} 開始（${s.reminderMinutes}分前）${tag ? `  [${tag.name}]` : ""}`;
+            const parts = [`${s.startTime} 開始（${s.reminderMinutes}分前）`];
+            if (tag) parts.push(`[${tag.name}]`);
+            if (s.location) parts.push(`📍 ${s.location}`);
+            const body = parts.join("  ");
             const opts: NotificationOptions = {
               body,
               icon: "/schedule-c/icon.svg",
@@ -409,9 +416,10 @@ function App() {
       endTime: "10:00",
       tagId: tags[0]?.id ?? "work",
       repeat: "none",
-      reminderMinutes: 0
+      reminderMinutes: 0,
+      location: "",
+      url: ""
     };
-    persist([...baseSchedules, next]);
     setSheetOpen(true);
   };
 
@@ -465,7 +473,9 @@ function App() {
                 endTime: item.endTime || "10:00",
                 tagId,
                 repeat: toRepeat(item.recurrence?.pattern),
-                reminderMinutes: 0
+                reminderMinutes: 0,
+                location: "",
+                url: ""
               };
             });
 
@@ -905,6 +915,35 @@ function ScheduleCard({
           <option value={120}>2時間前</option>
           <option value={1440}>1日前</option>
         </select>
+      </div>
+      <div className="space-y-1">
+        <label className="text-xs text-slate-400">📍 場所</label>
+        <input
+          className="w-full rounded-lg bg-slate-700 px-2 py-1 text-base"
+          placeholder="場所を入力"
+          value={schedule.location ?? ""}
+          onChange={(e) => onUpdate({ ...schedule, location: e.target.value })}
+        />
+      </div>
+      <div className="space-y-1">
+        <label className="text-xs text-slate-400">🔗 URL</label>
+        <input
+          type="url"
+          className="w-full rounded-lg bg-slate-700 px-2 py-1 text-base"
+          placeholder="https://..."
+          value={schedule.url ?? ""}
+          onChange={(e) => onUpdate({ ...schedule, url: e.target.value })}
+        />
+        {schedule.url && (
+          <a
+            href={schedule.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block truncate text-xs text-cyan-400 underline"
+          >
+            {schedule.url}
+          </a>
+        )}
       </div>
     </div>
   );
