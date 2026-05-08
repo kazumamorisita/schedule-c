@@ -312,8 +312,48 @@ function App() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="予定をキーワード検索"
-            className="w-full rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-cyan-400"
+            className="w-full rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-base text-slate-100 outline-none transition focus:border-cyan-400 md:text-sm"
           />
+        </div>
+
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          {tags.map((t) => (
+            <button
+              key={t.id}
+              onClick={() =>
+                setActiveTags((prev) => (prev.includes(t.id) ? prev.filter((id) => id !== t.id) : [...prev, t.id]))
+              }
+              className={`rounded-full px-3 py-1 text-xs font-semibold ${activeTags.includes(t.id) ? "opacity-100" : "opacity-35"}`}
+              style={{ backgroundColor: t.color, color: "#0f172a" }}
+            >
+              {t.name}
+            </button>
+          ))}
+          <button
+            className="inline-flex items-center gap-1 rounded-xl border border-slate-500 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-100"
+            onClick={onExport}
+            aria-label="JSONエクスポート"
+            title="JSONエクスポート"
+          >
+            <span aria-hidden>⬇</span>
+          </button>
+          <button
+            className="inline-flex items-center gap-1 rounded-xl border border-cyan-500/70 bg-cyan-500/15 px-3 py-1.5 text-xs font-semibold text-cyan-200"
+            onClick={() => fileRef.current?.click()}
+            aria-label="JSONインポート"
+            title="JSONインポート"
+          >
+            <span aria-hidden>⬆</span>
+          </button>
+          <button
+            className="inline-flex items-center gap-1 rounded-xl border border-violet-500/70 bg-violet-500/15 px-3 py-1.5 text-xs font-semibold text-violet-200"
+            onClick={() => setIsTagEditorOpen(true)}
+            aria-label="タグ編集"
+            title="タグ編集"
+          >
+            タグ
+          </button>
+          <input ref={fileRef} hidden type="file" accept=".json,application/json" onChange={onImport} />
         </div>
 
         <div className="grid grid-cols-7 gap-2 text-center text-xs text-slate-300">
@@ -367,46 +407,6 @@ function App() {
               </button>
             );
           })}
-        </div>
-
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          {tags.map((t) => (
-            <button
-              key={t.id}
-              onClick={() =>
-                setActiveTags((prev) => (prev.includes(t.id) ? prev.filter((id) => id !== t.id) : [...prev, t.id]))
-              }
-              className={`rounded-full px-3 py-1 text-xs font-semibold ${activeTags.includes(t.id) ? "opacity-100" : "opacity-35"}`}
-              style={{ backgroundColor: t.color, color: "#0f172a" }}
-            >
-              {t.name}
-            </button>
-          ))}
-          <button
-            className="inline-flex items-center gap-1 rounded-xl border border-slate-500 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-100"
-            onClick={onExport}
-            aria-label="JSONエクスポート"
-            title="JSONエクスポート"
-          >
-            <span aria-hidden>⬇</span>
-          </button>
-          <button
-            className="inline-flex items-center gap-1 rounded-xl border border-cyan-500/70 bg-cyan-500/15 px-3 py-1.5 text-xs font-semibold text-cyan-200"
-            onClick={() => fileRef.current?.click()}
-            aria-label="JSONインポート"
-            title="JSONインポート"
-          >
-            <span aria-hidden>⬆</span>
-          </button>
-          <button
-            className="inline-flex items-center gap-1 rounded-xl border border-violet-500/70 bg-violet-500/15 px-3 py-1.5 text-xs font-semibold text-violet-200"
-            onClick={() => setIsTagEditorOpen(true)}
-            aria-label="タグ編集"
-            title="タグ編集"
-          >
-            タグ
-          </button>
-          <input ref={fileRef} hidden type="file" accept=".json,application/json" onChange={onImport} />
         </div>
 
       </section>
@@ -466,15 +466,9 @@ function App() {
           sheetOpen ? "translate-y-0" : "translate-y-[74%]"
         }`}
         style={{ transform: `translateY(${sheetOpen ? sheetOffset : collapsedSheetY + sheetOffset}px)` }}
-        onPointerDown={(e) => onPointerDown(e.clientY)}
-        onPointerMove={(e) => onPointerMove(e.clientY)}
-        onPointerUp={onPointerUp}
-        onTouchStart={(e) => onPointerDown(e.touches[0].clientY)}
-        onTouchMove={(e) => onPointerMove(e.touches[0].clientY)}
-        onTouchEnd={onPointerUp}
       >
         <div
-          className="mx-auto mb-4 h-1.5 w-16 rounded-full bg-slate-600"
+          className="mx-auto mb-4 h-1.5 w-16 touch-none rounded-full bg-slate-600"
           onPointerDown={(e) => onPointerDown(e.clientY)}
           onTouchStart={(e) => onPointerDown(e.touches[0].clientY)}
           onTouchMove={(e) => onPointerMove(e.touches[0].clientY)}
@@ -486,7 +480,7 @@ function App() {
             予定追加
           </button>
         </div>
-        <div className="max-h-[48vh] space-y-2 overflow-y-auto overscroll-contain pr-1">
+        <div className="max-h-[48vh] space-y-2 overflow-y-auto overscroll-contain touch-pan-y pr-1">
           {dayItems.map((item) => (
             <article key={item.id} className="rounded-2xl border border-slate-700 bg-slate-800 p-3">
               <ScheduleCard
