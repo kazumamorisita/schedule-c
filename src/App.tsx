@@ -1,4 +1,4 @@
-import { ChangeEvent, CSSProperties, useMemo, useRef, useState } from "react";
+import { ChangeEvent, CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 
 type Repeat = "none" | "daily" | "weekly" | "monthly";
 
@@ -208,6 +208,7 @@ function App() {
   const [sheetOpen, setSheetOpen] = useState(true);
   const [sheetOffset, setSheetOffset] = useState(0);
   const [isTagEditorOpen, setIsTagEditorOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<"month" | "week" | "day">("month");
   const dragStartY = useRef<number | null>(null);
   const dragStartedInScrollable = useRef(false);
   const sheetListRef = useRef<HTMLDivElement | null>(null);
@@ -238,7 +239,34 @@ function App() {
     return map;
   }, [filteredSchedules]);
 
-  const dayItems = byDate[selectedDate] ?? [];
+  const timelineDates = useMemo(
+    () => (viewMode === "week" ? getWeekDates(selectedDate) : [selectedDate]),
+    [viewMode, selectedDate]
+  );
+
+  const timelineExpanded = useMemo(() => {
+    if (viewMode === "month") return [];
+    const from = timelineDates[0];
+    const to = timelineDates[timelineDates.length - 1];
+    return expandSchedules(baseSchedules, from, to);
+  }, [baseSchedules, viewMode, timelineDates]);
+
+  const timelineByDate = useMemo(() => {
+    const map: Record<string, Schedule[]> = {};
+    const filtered = timelineExpanded
+      .filter((s) => activeTags.includes(s.tagId))
+      .filter((s) => {
+        if (!normalizedSearch) return true;
+        return s.title.toLowerCase().includes(normalizedSearch) || s.description.toLowerCase().includes(normalizedSearch);
+      });
+    for (const s of filtered) {
+      map[s.date] ??= [];
+      map[s.date].push(s);
+    }
+    return map;
+  }, [timelineExpanded, activeTags, normalizedSearch]);
+
+  const dayItems = viewMode !== "month" ? (timelineByDate[selectedDate] ?? []) : (byDate[selectedDate] ?? []);
   const tagDistribution = useMemo(() => {
     const counts = tags.map((tag) => ({
       ...tag,
@@ -255,6 +283,25 @@ function App() {
 
   const dates = buildMonthGrid(currentMonth);
   const currentMonthLabel = `${currentMonth.getFullYear()}年 ${currentMonth.getMonth() + 1}月`;
+  const displayLabel =
+    viewMode === "week"
+      ? (() => {
+          const wd = parseISO(getWeekDates(selectedDate)[0]);
+          return `${wd.getFullYear()}年 ${wd.getMonth() + 1}月${wd.getDate()}日の週`;
+        })()
+      : viewMode === "day"
+        ? (() => {
+            const dd = parseISO(selectedDate);
+            return `${dd.getFullYear()}年 ${dd.getMonth() + 1}月${dd.getDate()}日`;
+          })()
+        : currentMonthLabel;
+  const setViewModeAndSync = (mode: "month" | "week" | "day") => {
+    if (mode === "month") {
+      const d = parseISO(selectedDate);
+      setCurrentMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+    }
+    setViewMode(mode);
+  };
   const collapsedSheetY = typeof window !== "undefined" ? Math.max(360, window.innerHeight - 80) : 420;
 
   const onPointerDown = (y: number) => {
@@ -420,33 +467,58 @@ function App() {
 
   return (
     <main className="app-shell-enter mx-auto flex min-h-screen max-w-6xl flex-col overflow-hidden p-2 text-slate-100 md:p-6">
-      <section className="panel-fade-in h-[calc(100vh-120px)] overflow-hidden rounded-3xl border border-slate-700/50 bg-slate-900/75 p-3 pb-4 shadow-soft backdrop-blur md:h-auto md:overflow-visible md:pb-6 md:p-6">
+      <section className="panel-fade-in flex flex-col h-[calc(100vh-120px)] overflow-hidden rounded-3xl border border-slate-700/50 bg-slate-900/75 p-3 pb-4 shadow-soft backdrop-blur md:h-auto md:overflow-visible md:pb-6 md:p-6">
+        <div className="shrink-0">
         <header className="mb-4 space-y-2">
           <div className="min-w-0">
-            <p className="title-glow mt-1 text-base font-semibold text-cyan-300 md:text-lg">{currentMonthLabel}</p>
+            <p className="title-glow mt-1 text-base font-semibold text-cyan-300 md:text-lg">{displayLabel}</p>
           </div>
           <div className="space-y-2">
             <div className="flex items-center justify-center gap-2">
               <button
-                aria-label="前月"
+                aria-label="前"
                 className="interactive-lift grid h-9 w-9 place-items-center rounded-full bg-slate-700 text-lg"
-                onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))}
+                onClick={() => {
+                  if (viewMode === "day") setSelectedDate(addDays(selectedDate, -1));
+                  else if (viewMode === "week") setSelectedDate(addDays(selectedDate, -7));
+                  else setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
+                }}
               >
                 ←
               </button>
               <button
                 className="interactive-lift rounded-full bg-slate-700 px-3 py-1.5 text-xs font-semibold"
-                onClick={() => setCurrentMonth(new Date(today.getFullYear(), today.getMonth(), 1))}
+                onClick={() => {
+                  setSelectedDate(isoToday);
+                  setCurrentMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+                }}
               >
                 今日
               </button>
               <button
-                aria-label="次月"
+                aria-label="次"
                 className="interactive-lift grid h-9 w-9 place-items-center rounded-full bg-slate-700 text-lg"
-                onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))}
+                onClick={() => {
+                  if (viewMode === "day") setSelectedDate(addDays(selectedDate, 1));
+                  else if (viewMode === "week") setSelectedDate(addDays(selectedDate, 7));
+                  else setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
+                }}
               >
                 →
               </button>
+            </div>
+            <div className="flex items-center justify-center gap-1">
+              {(["month", "week", "day"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                    viewMode === mode ? "bg-cyan-500 text-slate-900" : "bg-slate-700/80 text-slate-300"
+                  }`}
+                  onClick={() => setViewModeAndSync(mode)}
+                >
+                  {mode === "month" ? "月" : mode === "week" ? "週" : "日"}
+                </button>
+              ))}
             </div>
             <div className="w-full">
               <div className="chart-pop w-full rounded-xl border border-slate-700 bg-slate-800/70 p-2">
@@ -504,7 +576,9 @@ function App() {
           </button>
           <input ref={fileRef} hidden type="file" accept=".json,application/json" onChange={onImport} />
         </div>
+        </div>
 
+        {viewMode === "month" && (<>
         <div className="grid grid-cols-7 gap-2 text-center text-xs text-slate-300">
           {["日", "月", "火", "水", "木", "金", "土"].map((d) => (
             <div key={d} className="py-1">
@@ -558,6 +632,26 @@ function App() {
             );
           })}
         </div>
+        </>)}
+
+        {viewMode !== "month" && (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:h-[500px] md:flex-none">
+            <TimelineView
+              dates={timelineDates}
+              schedulesByDate={timelineByDate}
+              tags={tags}
+              selectedDate={selectedDate}
+              onSelectDate={(date) => {
+                setSelectedDate(date);
+                setSheetOpen(true);
+              }}
+              onSelectSchedule={(s) => {
+                setSelectedDate(s.date);
+                setSheetOpen(true);
+              }}
+            />
+          </div>
+        )}
 
       </section>
 
@@ -756,6 +850,156 @@ function buildMonthGrid(date: Date): string[] {
     cells.push(toISO(new Date(y, m, totalDays + (cells.length % 7))));
   }
   return cells;
+}
+
+const HOUR_HEIGHT = 52;
+const HOURS = Array.from({ length: 24 }, (_, i) => i);
+
+function timeToMinutes(time: string): number {
+  const [h, m] = time.split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+function getWeekDates(isoDate: string): string[] {
+  const d = parseISO(isoDate);
+  const day = d.getDay();
+  return Array.from({ length: 7 }, (_, i) => addDays(isoDate, i - day));
+}
+
+function TimelineView({
+  dates,
+  schedulesByDate,
+  tags,
+  selectedDate,
+  onSelectDate,
+  onSelectSchedule,
+}: {
+  dates: string[];
+  schedulesByDate: Record<string, Schedule[]>;
+  tags: Tag[];
+  selectedDate: string;
+  onSelectDate: (date: string) => void;
+  onSelectSchedule: (s: Schedule) => void;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const DAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
+  const now = new Date();
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      const scrollTo = Math.max(0, (now.getHours() - 1) * HOUR_HEIGHT);
+      scrollRef.current.scrollTop = scrollTo;
+    }
+  }, []);
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      {/* Day headers */}
+      <div className="flex shrink-0 border-b border-slate-700/70 bg-slate-900/80">
+        <div className="w-10 shrink-0" />
+        {dates.map((iso) => {
+          const d = parseISO(iso);
+          const isToday = iso === isoToday;
+          const isSel = iso === selectedDate;
+          return (
+            <button
+              key={iso}
+              className={`flex-1 py-1.5 text-center transition ${isSel && !isToday ? "bg-cyan-500/10" : ""}`}
+              onClick={() => onSelectDate(iso)}
+            >
+              <div className={`text-[10px] ${isToday ? "text-amber-300" : "text-slate-400"}`}>
+                {DAY_LABELS[d.getDay()]}
+              </div>
+              <div
+                className={`mx-auto flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
+                  isToday
+                    ? "bg-amber-400 text-slate-900"
+                    : isSel
+                      ? "bg-cyan-500/40 text-cyan-200"
+                      : "text-slate-200"
+                }`}
+              >
+                {d.getDate()}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      {/* Timeline body */}
+      <div ref={scrollRef} className="flex min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        {/* Time labels */}
+        <div className="w-10 shrink-0 select-none">
+          {HOURS.map((h) => (
+            <div
+              key={h}
+              className="flex items-start justify-end pr-1 text-[9px] text-slate-500"
+              style={{ height: HOUR_HEIGHT }}
+            >
+              <span className="-mt-2">{h > 0 ? `${h}:00` : ""}</span>
+            </div>
+          ))}
+        </div>
+        {/* Day columns */}
+        <div className="flex min-w-0 flex-1">
+          {dates.map((iso) => {
+            const daySchedules = schedulesByDate[iso] ?? [];
+            const isToday = iso === isoToday;
+            return (
+              <div
+                key={iso}
+                className={`relative flex-1 border-l ${isToday ? "border-slate-600" : "border-slate-800"}`}
+                style={{ minWidth: dates.length >= 5 ? 44 : undefined, height: HOUR_HEIGHT * 24 }}
+              >
+                {/* Hour gridlines */}
+                {HOURS.map((h) => (
+                  <div
+                    key={h}
+                    className={`absolute left-0 right-0 border-t ${h % 6 === 0 ? "border-slate-700" : "border-slate-800/60"}`}
+                    style={{ top: h * HOUR_HEIGHT }}
+                  />
+                ))}
+                {/* Now line */}
+                {isToday && (
+                  <div
+                    className="pointer-events-none absolute left-0 right-0 z-10 border-t-2 border-rose-400"
+                    style={{ top: (nowMinutes / 60) * HOUR_HEIGHT }}
+                  >
+                    <span className="absolute -left-0.5 -top-1.5 h-3 w-3 rounded-full bg-rose-400" />
+                  </div>
+                )}
+                {/* Schedule blocks */}
+                {daySchedules.map((s) => {
+                  const startMin = timeToMinutes(s.startTime);
+                  const endMin = timeToMinutes(s.endTime);
+                  const duration = endMin > startMin ? endMin - startMin : 30;
+                  const top = (startMin / 60) * HOUR_HEIGHT;
+                  const height = Math.max((duration / 60) * HOUR_HEIGHT, 18);
+                  const tag = tags.find((t) => t.id === s.tagId);
+                  return (
+                    <button
+                      key={s.id}
+                      data-no-sheet-drag="true"
+                      className="absolute left-0.5 right-0.5 z-20 overflow-hidden rounded-md px-1 py-0.5 text-left text-[9px] font-semibold text-slate-900 shadow"
+                      style={{ top, height, backgroundColor: tag?.color ?? "#94a3b8" }}
+                      onClick={() => onSelectSchedule(s)}
+                    >
+                      <div className="truncate leading-tight">{s.title}</div>
+                      {height >= 30 && (
+                        <div className="truncate leading-tight opacity-75">
+                          {s.startTime}–{s.endTime}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function TagDonutChart({ tags, total }: { tags: Array<Tag & { count: number }>; total: number }) {
