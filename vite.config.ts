@@ -1,7 +1,7 @@
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react' // もしくは使用中のフレームワーク
 
 export default defineConfig({
-  base: "/schedule-c/",
-  plugins: [react()]
-});
+  plugins: [react()],
+  base: '/schedule-c/', // リポジトリ名を指定
+})
