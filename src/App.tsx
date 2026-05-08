@@ -185,6 +185,50 @@ function toRepeat(pattern?: string): Repeat {
   return "none";
 }
 
+// 日本の祝日を計算して ISO 文字列のSetで返す
+function getJapaneseHolidays(year: number): Set<string> {
+  const h: string[] = [];
+  const fmt = (y: number, m: number, d: number) =>
+    `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+
+  // 第n月曜日を返す
+  const nthMonday = (y: number, month: number, n: number): number => {
+    const d = new Date(y, month - 1, 1);
+    const first = d.getDay();
+    const offset = first <= 1 ? 1 - first : 8 - first;
+    return 1 + offset + (n - 1) * 7;
+  };
+
+  // 春分・秋分の日（簡易計算）
+  const shunbun = (y: number) => Math.floor(20.8431 + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4));
+  const shubun  = (y: number) => Math.floor(23.2488 + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4));
+
+  h.push(fmt(year, 1, 1));                            // 元日
+  h.push(fmt(year, 1, nthMonday(year, 1, 2)));        // 成人の日
+  h.push(fmt(year, 2, 11));                           // 建国記念の日
+  h.push(fmt(year, 2, 23));                           // 天皇誕生日
+  h.push(fmt(year, 3, shunbun(year)));                // 春分の日
+  h.push(fmt(year, 4, 29));                           // 昭和の日
+  h.push(fmt(year, 5, 3));                            // 憲法記念日
+  h.push(fmt(year, 5, 4));                            // みどりの日
+  h.push(fmt(year, 5, 5));                            // こどもの日
+  h.push(fmt(year, 7, nthMonday(year, 7, 3)));        // 海の日
+  h.push(fmt(year, 8, 11));                           // 山の日
+  h.push(fmt(year, 9, nthMonday(year, 9, 3)));        // 敬老の日
+  h.push(fmt(year, 9, shubun(year)));                 // 秋分の日
+  h.push(fmt(year, 10, nthMonday(year, 10, 2)));      // スポーツの日
+  h.push(fmt(year, 11, 3));                           // 文化の日
+  h.push(fmt(year, 11, 23));                          // 勤労感謝の日
+
+  // 振替休日（祝日が日曜→翌月曜）
+  const set = new Set(h);
+  for (const iso of [...h]) {
+    const d = parseISO(iso);
+    if (d.getDay() === 0) set.add(addDays(iso, 1));
+  }
+  return set;
+}
+
 function App() {
   const [tags, setTags] = useState<Tag[]>(() => {
     const raw = localStorage.getItem(TAG_STORAGE_KEY);
@@ -332,6 +376,11 @@ function App() {
   }, [baseSchedules, tags]);
 
   const dates = buildMonthGrid(currentMonth);
+  const holidays = useMemo(() => {
+    const y = currentMonth.getFullYear();
+    const set = new Set([...getJapaneseHolidays(y), ...getJapaneseHolidays(y + 1)]);
+    return set;
+  }, [currentMonth]);
   const currentMonthLabel = `${currentMonth.getFullYear()}年 ${currentMonth.getMonth() + 1}月`;
   const displayLabel =
     viewMode === "week"
@@ -636,8 +685,10 @@ function App() {
 
         {viewMode === "month" && (<>
         <div className="grid grid-cols-7 gap-2 text-center text-xs text-slate-300">
-          {["日", "月", "火", "水", "木", "金", "土"].map((d) => (
-            <div key={d} className="py-1">
+          {["日", "月", "火", "水", "木", "金", "土"].map((d, i) => (
+            <div key={d} className={`py-1 font-semibold ${
+              i === 0 ? "text-rose-400" : i === 6 ? "text-sky-400" : "text-slate-400"
+            }`}>
               {d}
             </div>
           ))}
@@ -649,6 +700,24 @@ function App() {
             const daySchedules = byDate[iso] ?? [];
             const isToday = iso === isoToday;
             const dayTagIds = [...new Set(daySchedules.map((item) => item.tagId))];
+            const dow = parseISO(iso).getDay();
+            const isHoliday = holidays.has(iso);
+            const isSunday = dow === 0;
+            const isSaturday = dow === 6;
+            const dateTextColor = isToday
+              ? "text-amber-300"
+              : isHoliday || isSunday
+                ? "text-rose-400"
+                : isSaturday
+                  ? "text-sky-400"
+                  : "";
+            const cellBg = selectedDate === iso
+              ? "border-cyan-400 bg-cyan-500/20"
+              : isHoliday || isSunday
+                ? "border-rose-900/50 bg-rose-950/30"
+                : isSaturday
+                  ? "border-sky-900/50 bg-sky-950/30"
+                  : "border-slate-700 bg-slate-800/60";
             return (
               <button
                 key={iso}
@@ -657,15 +726,16 @@ function App() {
                   setSheetOpen(true);
                 }}
                 className={`relative aspect-square min-h-0 rounded-2xl border p-1.5 text-left transition md:p-2 ${
-                  selectedDate === iso ? "border-cyan-400 bg-cyan-500/20" : "border-slate-700 bg-slate-800/60"
+                  cellBg
                 } ${
                   isToday ? "ring-2 ring-amber-300/80 ring-offset-1 ring-offset-slate-900" : ""
                 } ${inMonth ? "" : "opacity-35"} calendar-cell-enter interactive-lift`}
                 style={{ animationDelay: `${(idx % 14) * 18}ms` }}
               >
-                <div className={`text-xs font-semibold md:text-sm ${isToday ? "text-amber-300" : ""}`}>
+                <div className={`text-xs font-semibold md:text-sm ${dateTextColor}`}>
                   <span>{Number(iso.slice(-2))}</span>
                   {isToday && <span className="block text-[9px] leading-tight md:text-[10px]">今日</span>}
+                  {isHoliday && !isToday && <span className="block text-[8px] leading-tight opacity-80">祝</span>}
                 </div>
                 <div className="mt-1 flex items-center gap-1">
                   {dayTagIds.slice(0, 3).map((tagId) => {
