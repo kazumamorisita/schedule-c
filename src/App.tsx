@@ -232,7 +232,9 @@ function App() {
   const normalizedSearch = searchQuery.trim().toLowerCase();
   const filteredSchedules = visibleSchedules.filter((s) => {
     if (!normalizedSearch) return true;
-    return s.title.toLowerCase().includes(normalizedSearch) || s.description.toLowerCase().includes(normalizedSearch) || (s.location ?? "").toLowerCase().includes(normalizedSearch); = filteredSchedules.filter((s) => s.date >= monthStart && s.date <= monthEnd);
+    return s.title.toLowerCase().includes(normalizedSearch) || s.description.toLowerCase().includes(normalizedSearch) || (s.location ?? "").toLowerCase().includes(normalizedSearch);
+  });
+  const monthVisibleSchedules = filteredSchedules.filter((s) => s.date >= monthStart && s.date <= monthEnd);
 
   const byDate = useMemo(() => {
     const map: Record<string, Schedule[]> = {};
@@ -261,8 +263,9 @@ function App() {
       .filter((s) => activeTags.includes(s.tagId))
       .filter((s) => {
         if (!normalizedSearch) return true;
-        return s.title.toLowerCase().includes(normalizedSearch) || s.description.toLowerCase().includes(normalizedSearch) || (s.location ?? "").toLowerCase().includes(normalizedSearch); {
-      map[s.date] ??= [];
+        return s.title.toLowerCase().includes(normalizedSearch) || s.description.toLowerCase().includes(normalizedSearch) || (s.location ?? "").toLowerCase().includes(normalizedSearch);
+      });
+    for (const s of filtered) {
       map[s.date].push(s);
     }
     return map;
