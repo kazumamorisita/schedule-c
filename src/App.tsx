@@ -17,6 +17,7 @@ type Schedule = {
   endTime: string;
   tagId: string;
   repeat: Repeat;
+  reminderMinutes: number;
 };
 
 type LegacyEvent = {
@@ -62,7 +63,8 @@ const defaultData: Schedule[] = [
     startTime: "10:00",
     endTime: "10:30",
     tagId: "work",
-    repeat: "weekly"
+    repeat: "weekly",
+    reminderMinutes: 0
   }
 ];
 
@@ -281,6 +283,48 @@ function App() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   };
 
+  // 通知スケジューリング
+  useEffect(() => {
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+
+    const ids: ReturnType<typeof setTimeout>[] = [];
+    const now = new Date();
+    const horizon = addDays(toISO(now), 7);
+    const upcoming = expandSchedules(baseSchedules, toISO(now), horizon).filter(
+      (s) => s.reminderMinutes > 0
+    );
+
+    for (const s of upcoming) {
+      const [h, m] = s.startTime.split(":").map(Number);
+      const schedDate = parseISO(s.date);
+      schedDate.setHours(h, m, 0, 0);
+      const notifyAt = new Date(schedDate.getTime() - s.reminderMinutes * 60000);
+      const delay = notifyAt.getTime() - now.getTime();
+      if (delay > 0) {
+        const tag = tags.find((t) => t.id === s.tagId);
+        ids.push(
+          setTimeout(async () => {
+            const body = `${s.startTime} 開始（${s.reminderMinutes}分前）${tag ? `  [${tag.name}]` : ""}`;
+            const opts: NotificationOptions = {
+              body,
+              icon: "/schedule-c/icon.svg",
+              badge: "/schedule-c/icon.svg",
+              tag: s.id,
+            };
+            try {
+              const reg = await navigator.serviceWorker?.ready;
+              reg?.showNotification(s.title, opts);
+            } catch {
+              new Notification(s.title, opts);
+            }
+          }, delay)
+        );
+      }
+    }
+
+    return () => ids.forEach(clearTimeout);
+  }, [baseSchedules, tags]);
+
   const dates = buildMonthGrid(currentMonth);
   const currentMonthLabel = `${currentMonth.getFullYear()}年 ${currentMonth.getMonth() + 1}月`;
   const displayLabel =
@@ -364,7 +408,8 @@ function App() {
       startTime: "09:00",
       endTime: "10:00",
       tagId: tags[0]?.id ?? "work",
-      repeat: "none"
+      repeat: "none",
+      reminderMinutes: 0
     };
     persist([...baseSchedules, next]);
     setSheetOpen(true);
@@ -419,7 +464,8 @@ function App() {
                 startTime: item.startTime || "09:00",
                 endTime: item.endTime || "10:00",
                 tagId,
-                repeat: toRepeat(item.recurrence?.pattern)
+                repeat: toRepeat(item.recurrence?.pattern),
+                reminderMinutes: 0
               };
             });
 
@@ -736,6 +782,20 @@ function App() {
             予定追加
           </button>
           </div>
+          {"Notification" in window && Notification.permission === "denied" && (
+            <p className="mt-2 rounded-lg bg-rose-900/50 px-3 py-1.5 text-xs text-rose-300">
+              ⚠ 通知がブロックされています。ブラウザの設定から許可してください。
+            </p>
+          )}
+          {"Notification" in window && Notification.permission === "default" && (
+            <button
+              data-no-sheet-drag="true"
+              className="mt-2 w-full rounded-lg border border-violet-500/50 bg-violet-500/15 px-3 py-1.5 text-xs font-semibold text-violet-200"
+              onClick={() => Notification.requestPermission()}
+            >
+              🔔 通知を有効にする
+            </button>
+          )}
         </div>
         <div ref={sheetListRef} data-sheet-scroll="true" className="max-h-[48vh] space-y-2 overflow-y-auto overscroll-contain touch-pan-y pr-1">
           {dayItems.map((item, idx) => (
@@ -743,9 +803,12 @@ function App() {
               <ScheduleCard
                 schedule={item}
                 tags={tags}
-                onUpdate={(next) =>
-                  persist(baseSchedules.map((s) => (s.id === item.id.split("_")[0] ? { ...next, id: s.id } : s)))
-                }
+                onUpdate={(next) => {
+                  if (next.reminderMinutes > 0 && "Notification" in window && Notification.permission === "default") {
+                    Notification.requestPermission();
+                  }
+                  persist(baseSchedules.map((s) => (s.id === item.id.split("_")[0] ? { ...next, id: s.id } : s)));
+                }}
                 onDelete={() => persist(baseSchedules.filter((s) => s.id !== item.id.split("_")[0]))}
               />
             </article>
@@ -824,6 +887,23 @@ function ScheduleCard({
           <option value="daily">毎日</option>
           <option value="weekly">毎週</option>
           <option value="monthly">毎月</option>
+        </select>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="col-span-2 text-xs text-slate-400">リマインダー</label>
+        <select
+          className="col-span-2 rounded-lg bg-slate-700 px-2 py-1 text-base"
+          value={schedule.reminderMinutes ?? 0}
+          onChange={(e) => onUpdate({ ...schedule, reminderMinutes: Number(e.target.value) })}
+        >
+          <option value={0}>なし</option>
+          <option value={5}>5分前</option>
+          <option value={10}>10分前</option>
+          <option value={15}>15分前</option>
+          <option value={30}>30分前</option>
+          <option value={60}>1時間前</option>
+          <option value={120}>2時間前</option>
+          <option value={1440}>1日前</option>
         </select>
       </div>
     </div>
