@@ -1,4 +1,4 @@
-import { ChangeEvent, useMemo, useRef, useState } from "react";
+import { ChangeEvent, CSSProperties, useMemo, useRef, useState } from "react";
 
 type Repeat = "none" | "daily" | "weekly" | "monthly";
 
@@ -17,6 +17,27 @@ type Schedule = {
   endTime: string;
   tagId: string;
   repeat: Repeat;
+};
+
+type LegacyEvent = {
+  id?: string;
+  title?: string;
+  description?: string;
+  date?: string;
+  startTime?: string;
+  endTime?: string;
+  category?: string;
+  allDay?: boolean;
+  recurrence?: {
+    pattern?: string;
+    endDate?: string;
+  };
+};
+
+type LegacyBackup = {
+  version?: string;
+  exportDate?: string;
+  events?: LegacyEvent[];
 };
 
 const TAGS: Tag[] = [
@@ -103,6 +124,59 @@ function expandSchedules(source: Schedule[], from: string, to: string): Schedule
     }
   }
   return expanded;
+}
+
+function isISODate(value: string | undefined): value is string {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function toTagId(category: string): string {
+  const mapped: Record<string, string> = {
+    work: "work",
+    personal: "private",
+    private: "private",
+    health: "health",
+    study: "study",
+    social: "social",
+    other: "other"
+  };
+  const raw = (category || "other").toLowerCase();
+  if (mapped[raw]) return mapped[raw];
+  return raw.replace(/[^a-z0-9_-]/g, "-") || "other";
+}
+
+function toTagLabel(category: string): string {
+  const mapped: Record<string, string> = {
+    work: "仕事",
+    personal: "プライベート",
+    private: "プライベート",
+    health: "健康",
+    study: "勉強",
+    social: "交流",
+    other: "その他"
+  };
+  const raw = (category || "other").toLowerCase();
+  return mapped[raw] ?? category;
+}
+
+function toTagColor(tagId: string): string {
+  const palette: Record<string, string> = {
+    work: "#38bdf8",
+    private: "#f472b6",
+    health: "#4ade80",
+    study: "#f59e0b",
+    social: "#a78bfa",
+    other: "#94a3b8"
+  };
+  return palette[tagId] ?? "#94a3b8";
+}
+
+function toRepeat(pattern?: string): Repeat {
+  const normalized = (pattern || "").toLowerCase();
+  if (normalized === "daily") return "daily";
+  if (normalized === "weekly") return "weekly";
+  if (normalized === "monthly") return "monthly";
+  return "none";
 }
 
 function App() {
@@ -264,8 +338,50 @@ function App() {
     const fr = new FileReader();
     fr.onload = () => {
       try {
-        const parsed = JSON.parse(String(fr.result)) as Schedule[];
-        if (Array.isArray(parsed)) persist(parsed);
+        const parsed = JSON.parse(String(fr.result));
+
+        if (Array.isArray(parsed)) {
+          persist(parsed as Schedule[]);
+          return;
+        }
+
+        const legacy = parsed as LegacyBackup;
+        if (legacy && Array.isArray(legacy.events)) {
+          const nextTags = [...tags];
+          const tagIdSet = new Set(nextTags.map((t) => t.id));
+
+          const converted: Schedule[] = legacy.events
+            .filter((item) => isISODate(item.date))
+            .map((item) => {
+              const category = item.category || "other";
+              const tagId = toTagId(category);
+              if (!tagIdSet.has(tagId)) {
+                nextTags.push({
+                  id: tagId,
+                  name: toTagLabel(category),
+                  color: toTagColor(tagId)
+                });
+                tagIdSet.add(tagId);
+              }
+
+              return {
+                id: item.id || crypto.randomUUID(),
+                title: item.title || "無題の予定",
+                description: item.description || "",
+                date: item.date!,
+                startTime: item.startTime || "09:00",
+                endTime: item.endTime || "10:00",
+                tagId,
+                repeat: toRepeat(item.recurrence?.pattern)
+              };
+            });
+
+          persistTags(nextTags);
+          persist(converted);
+          return;
+        }
+
+        alert("未対応のJSON形式です。バックアップ形式を確認してください。");
       } catch {
         alert("JSONの読み込みに失敗しました。");
       }
@@ -673,6 +789,14 @@ function TagDonutChart({ tags, total }: { tags: Array<Tag & { count: number }>; 
                   strokeDasharray={dashArray}
                   strokeDashoffset={-segmentOffset}
                   strokeLinecap="butt"
+                  className="donut-segment"
+                  style={
+                    {
+                      "--donut-from": `${circumference}`,
+                      "--donut-to": `${-segmentOffset}`,
+                      animationDelay: `${80 + visibleTags.findIndex((tag) => tag.id === item.id) * 120}ms`
+                    } as CSSProperties
+                  }
                 />
               );
             })}

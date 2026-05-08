@@ -75,6 +75,17 @@ select {
   }
 }
 
+@keyframes donut-draw {
+  from {
+    opacity: 0;
+    stroke-dashoffset: var(--donut-from);
+  }
+  to {
+    opacity: 1;
+    stroke-dashoffset: var(--donut-to);
+  }
+}
+
 .app-shell-enter {
   animation: fade-in 360ms ease-out both;
 }
@@ -119,6 +130,11 @@ select {
   animation: soft-breathe 2.6s ease-in-out infinite;
 }
 
+.donut-segment {
+  opacity: 0;
+  animation: donut-draw 700ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
 .interactive-lift {
   transition: transform 180ms ease, box-shadow 180ms ease, filter 180ms ease;
 }
@@ -146,7 +162,8 @@ select {
   .modal-backdrop-enter,
   .modal-card-enter,
   .title-glow,
-  .chip-breathe {
+  .chip-breathe,
+  .donut-segment {
     animation: none !important;
   }
 
