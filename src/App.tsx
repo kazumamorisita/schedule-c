@@ -420,6 +420,7 @@ function App() {
       location: "",
       url: ""
     };
+    persist([...baseSchedules, next]);
     setSheetOpen(true);
   };
 
