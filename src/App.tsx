@@ -825,6 +825,7 @@ function App() {
           ))}
           {dayItems.length === 0 && <p className="text-sm text-slate-400">予定はありません。</p>}
         </div>
+        <FreeSlotsPanel schedules={dayItems} />
       </section>
     </main>
   );
@@ -947,6 +948,104 @@ function ScheduleCard({
       </div>
     </div>
   );
+}
+
+type FreeSlot = { start: string; end: string; minutes: number };
+
+function FreeSlotsPanel({ schedules }: { schedules: Schedule[] }) {
+  const [open, setOpen] = useState(false);
+  const slots = calcFreeSlots(schedules);
+  const totalFree = slots.reduce((s, sl) => s + sl.minutes, 0);
+
+  return (
+    <div className="mt-3 shrink-0">
+      <button
+        data-no-sheet-drag="true"
+        className="flex w-full items-center justify-between rounded-xl border border-slate-700 bg-slate-800/60 px-3 py-2 text-xs font-semibold text-slate-300"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span>⏱ 空き時間を確認</span>
+        <span className="flex items-center gap-2">
+          <span className="text-emerald-400">{formatDuration(totalFree)} 空き</span>
+          <span className="text-slate-500">{open ? "▲" : "▼"}</span>
+        </span>
+      </button>
+      {open && (
+        <div className="mt-1 space-y-1 rounded-xl border border-slate-700 bg-slate-800/40 p-2">
+          {slots.length === 0 ? (
+            <p className="py-1 text-center text-xs text-slate-500">空き時間がありません（08:00〜22:00）</p>
+          ) : (
+            slots.map((slot) => (
+              <div
+                key={slot.start}
+                className="flex items-center justify-between rounded-lg bg-emerald-500/10 px-3 py-1.5"
+              >
+                <span className="text-xs font-semibold text-emerald-300">
+                  {slot.start} 〜 {slot.end}
+                </span>
+                <span className="text-xs text-slate-400">{formatDuration(slot.minutes)}</span>
+              </div>
+            ))
+          )}
+          <p className="pt-0.5 text-center text-[10px] text-slate-600">08:00〜22:00 を対象に計算</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function calcFreeSlots(
+  schedules: Schedule[],
+  dayStart = "08:00",
+  dayEnd = "22:00"
+): FreeSlot[] {
+  const startMin = timeToMinutes(dayStart);
+  const endMin = timeToMinutes(dayEnd);
+
+  // 各予定の時間帯を分単位に変換してソート
+  const busy = schedules
+    .map((s) => ({ s: timeToMinutes(s.startTime), e: timeToMinutes(s.endTime) }))
+    .filter((b) => b.e > b.s)
+    .sort((a, b) => a.s - b.s);
+
+  // ブロックをマージ
+  const merged: { s: number; e: number }[] = [];
+  for (const b of busy) {
+    if (merged.length === 0 || b.s > merged[merged.length - 1].e) {
+      merged.push({ ...b });
+    } else {
+      merged[merged.length - 1].e = Math.max(merged[merged.length - 1].e, b.e);
+    }
+  }
+
+  // 空き時間を計算
+  const slots: FreeSlot[] = [];
+  let cursor = startMin;
+  for (const b of merged) {
+    const slotEnd = Math.min(b.s, endMin);
+    if (slotEnd - cursor >= 15) {
+      slots.push({ start: minutesToTime(cursor), end: minutesToTime(slotEnd), minutes: slotEnd - cursor });
+    }
+    cursor = Math.max(cursor, b.e);
+    if (cursor >= endMin) break;
+  }
+  if (endMin - cursor >= 15) {
+    slots.push({ start: minutesToTime(cursor), end: minutesToTime(endMin), minutes: endMin - cursor });
+  }
+  return slots;
+}
+
+function minutesToTime(min: number): string {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+function formatDuration(minutes: number): string {
+  if (minutes < 60) return `${minutes}分`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m > 0 ? `${h}時間${m}分` : `${h}時間`;
 }
 
 function buildMonthGrid(date: Date): string[] {
