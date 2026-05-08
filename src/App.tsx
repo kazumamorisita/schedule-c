@@ -135,6 +135,8 @@ function App() {
   const [sheetOffset, setSheetOffset] = useState(0);
   const [isTagEditorOpen, setIsTagEditorOpen] = useState(false);
   const dragStartY = useRef<number | null>(null);
+  const dragStartedInScrollable = useRef(false);
+  const sheetListRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const monthStart = toISO(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1));
@@ -185,9 +187,26 @@ function App() {
     dragStartY.current = y;
   };
 
+  const canDragSheet = (diff: number) => {
+    if (!dragStartedInScrollable.current) return true;
+    const list = sheetListRef.current;
+    if (!list) return true;
+
+    if (diff > 0) {
+      return list.scrollTop <= 0;
+    }
+
+    if (diff < 0) {
+      return !sheetOpen;
+    }
+
+    return true;
+  };
+
   const onPointerMove = (y: number) => {
     if (dragStartY.current === null) return;
     const diff = y - dragStartY.current;
+    if (!canDragSheet(diff)) return;
     if (diff > 0) setSheetOffset(Math.min(collapsedSheetY, diff));
     if (diff < 0) setSheetOffset(Math.max(-10, diff));
   };
@@ -200,6 +219,19 @@ function App() {
     }
     setSheetOffset(0);
     dragStartY.current = null;
+    dragStartedInScrollable.current = false;
+  };
+
+  const shouldBlockSheetDrag = (target: EventTarget | null) => {
+    if (!(target instanceof HTMLElement)) return false;
+    return Boolean(target.closest("input, textarea, select, button[data-no-sheet-drag='true']"));
+  };
+
+  const beginSheetDrag = (y: number, target: EventTarget | null) => {
+    if (shouldBlockSheetDrag(target)) return false;
+    dragStartedInScrollable.current = Boolean(target instanceof HTMLElement && target.closest("[data-sheet-scroll='true']"));
+    onPointerDown(y);
+    return true;
   };
 
   const onCreateSchedule = () => {
@@ -271,37 +303,37 @@ function App() {
   };
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-6xl flex-col overflow-hidden p-2 text-slate-100 md:p-6">
-      <section className="h-[calc(100vh-120px)] overflow-hidden rounded-3xl border border-slate-700/50 bg-slate-900/75 p-3 pb-4 shadow-soft backdrop-blur md:h-auto md:overflow-visible md:pb-6 md:p-6">
+    <main className="app-shell-enter mx-auto flex min-h-screen max-w-6xl flex-col overflow-hidden p-2 text-slate-100 md:p-6">
+      <section className="panel-fade-in h-[calc(100vh-120px)] overflow-hidden rounded-3xl border border-slate-700/50 bg-slate-900/75 p-3 pb-4 shadow-soft backdrop-blur md:h-auto md:overflow-visible md:pb-6 md:p-6">
         <header className="mb-4 space-y-2">
           <div className="min-w-0">
-            <p className="mt-1 text-base font-semibold text-cyan-300 md:text-lg">{currentMonthLabel}</p>
+            <p className="title-glow mt-1 text-base font-semibold text-cyan-300 md:text-lg">{currentMonthLabel}</p>
           </div>
           <div className="space-y-2">
             <div className="flex items-center justify-center gap-2">
               <button
                 aria-label="前月"
-                className="grid h-9 w-9 place-items-center rounded-full bg-slate-700 text-lg"
+                className="interactive-lift grid h-9 w-9 place-items-center rounded-full bg-slate-700 text-lg"
                 onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))}
               >
                 ←
               </button>
               <button
-                className="rounded-full bg-slate-700 px-3 py-1.5 text-xs font-semibold"
+                className="interactive-lift rounded-full bg-slate-700 px-3 py-1.5 text-xs font-semibold"
                 onClick={() => setCurrentMonth(new Date(today.getFullYear(), today.getMonth(), 1))}
               >
                 今日
               </button>
               <button
                 aria-label="次月"
-                className="grid h-9 w-9 place-items-center rounded-full bg-slate-700 text-lg"
+                className="interactive-lift grid h-9 w-9 place-items-center rounded-full bg-slate-700 text-lg"
                 onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))}
               >
                 →
               </button>
             </div>
             <div className="w-full">
-              <div className="w-full rounded-xl border border-slate-700 bg-slate-800/70 p-2">
+              <div className="chart-pop w-full rounded-xl border border-slate-700 bg-slate-800/70 p-2">
                 <TagDonutChart tags={tagDistribution.counts} total={tagDistribution.total} />
               </div>
             </div>
@@ -317,21 +349,21 @@ function App() {
           />
         </div>
 
-        <div className="mb-3 flex flex-nowrap items-center gap-2 overflow-x-auto pb-1 pr-1 touch-pan-x">
+        <div className="tag-row-slide-in mb-3 flex flex-nowrap items-center gap-2 overflow-x-auto pb-1 pr-1 touch-pan-x">
           {tags.map((t) => (
             <button
               key={t.id}
               onClick={() =>
                 setActiveTags((prev) => (prev.includes(t.id) ? prev.filter((id) => id !== t.id) : [...prev, t.id]))
               }
-              className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${activeTags.includes(t.id) ? "opacity-100" : "opacity-35"}`}
+              className={`chip-breathe shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${activeTags.includes(t.id) ? "opacity-100" : "opacity-35"}`}
               style={{ backgroundColor: t.color, color: "#0f172a" }}
             >
               {t.name}
             </button>
           ))}
           <button
-            className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-slate-500 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-100"
+            className="interactive-lift inline-flex shrink-0 items-center gap-1 rounded-xl border border-slate-500 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-100"
             onClick={onExport}
             aria-label="JSONエクスポート"
             title="JSONエクスポート"
@@ -339,7 +371,7 @@ function App() {
             <span aria-hidden>⬇</span>
           </button>
           <button
-            className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-cyan-500/70 bg-cyan-500/15 px-3 py-1.5 text-xs font-semibold text-cyan-200"
+            className="interactive-lift inline-flex shrink-0 items-center gap-1 rounded-xl border border-cyan-500/70 bg-cyan-500/15 px-3 py-1.5 text-xs font-semibold text-cyan-200"
             onClick={() => fileRef.current?.click()}
             aria-label="JSONインポート"
             title="JSONインポート"
@@ -347,7 +379,7 @@ function App() {
             <span aria-hidden>⬆</span>
           </button>
           <button
-            className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-violet-500/70 bg-violet-500/15 px-3 py-1.5 text-xs font-semibold text-violet-200"
+            className="interactive-lift inline-flex shrink-0 items-center gap-1 rounded-xl border border-violet-500/70 bg-violet-500/15 px-3 py-1.5 text-xs font-semibold text-violet-200"
             onClick={() => setIsTagEditorOpen(true)}
             aria-label="タグ編集"
             title="タグ編集"
@@ -366,7 +398,7 @@ function App() {
         </div>
 
         <div className="grid grid-cols-7 gap-1.5 md:gap-2">
-          {dates.map((iso) => {
+          {dates.map((iso, idx) => {
             const inMonth = iso.startsWith(`${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, "0")}`);
             const daySchedules = byDate[iso] ?? [];
             const isToday = iso === isoToday;
@@ -382,7 +414,8 @@ function App() {
                   selectedDate === iso ? "border-cyan-400 bg-cyan-500/20" : "border-slate-700 bg-slate-800/60"
                 } ${
                   isToday ? "ring-2 ring-amber-300/80 ring-offset-1 ring-offset-slate-900" : ""
-                } ${inMonth ? "" : "opacity-35"}`}
+                } ${inMonth ? "" : "opacity-35"} calendar-cell-enter interactive-lift`}
+                style={{ animationDelay: `${(idx % 14) * 18}ms` }}
               >
                 <div className={`text-xs font-semibold md:text-sm ${isToday ? "text-amber-300" : ""}`}>
                   <span>{Number(iso.slice(-2))}</span>
@@ -414,11 +447,11 @@ function App() {
 
       {isTagEditorOpen && (
         <section
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm modal-backdrop-enter"
           onClick={() => setIsTagEditorOpen(false)}
         >
           <div
-            className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-4 shadow-soft"
+            className="modal-card-enter w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-4 shadow-soft"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-3 flex items-center justify-between">
@@ -463,42 +496,40 @@ function App() {
       )}
 
       <section
-        className={`fixed bottom-0 left-0 right-0 mx-auto w-full max-w-6xl rounded-t-3xl border border-slate-700 bg-slate-900/95 p-4 shadow-soft transition-transform duration-300 ${
+        className={`sheet-fade-in fixed bottom-0 left-0 right-0 mx-auto w-full max-w-6xl rounded-t-3xl border border-slate-700 bg-slate-900/95 p-4 shadow-soft transition-transform duration-300 ${
           sheetOpen ? "translate-y-0" : "translate-y-[74%]"
         }`}
         style={{ transform: `translateY(${sheetOpen ? sheetOffset : collapsedSheetY + sheetOffset}px)` }}
+        onPointerDown={(e) => {
+          beginSheetDrag(e.clientY, e.target);
+        }}
+        onPointerMove={(e) => onPointerMove(e.clientY)}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        onTouchStart={(e) => {
+          beginSheetDrag(e.touches[0].clientY, e.target);
+        }}
+        onTouchMove={(e) => {
+          if (dragStartY.current === null) return;
+          onPointerMove(e.touches[0].clientY);
+        }}
+        onTouchEnd={onPointerUp}
+        onTouchCancel={onPointerUp}
       >
         <div
           className="mb-3 touch-none select-none"
-          onPointerDown={(e) => {
-            e.currentTarget.setPointerCapture(e.pointerId);
-            onPointerDown(e.clientY);
-          }}
-          onPointerMove={(e) => onPointerMove(e.clientY)}
-          onPointerUp={(e) => {
-            if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-              e.currentTarget.releasePointerCapture(e.pointerId);
-            }
-            onPointerUp();
-          }}
-          onPointerCancel={(e) => {
-            if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-              e.currentTarget.releasePointerCapture(e.pointerId);
-            }
-            onPointerUp();
-          }}
         >
           <div className="mx-auto mb-4 h-1.5 w-16 rounded-full bg-slate-600" />
           <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">{selectedDate} の予定</h2>
-          <button className="rounded-lg bg-cyan-500 px-3 py-1.5 text-sm font-semibold text-slate-950" onClick={onCreateSchedule}>
+          <button data-no-sheet-drag="true" className="interactive-lift rounded-lg bg-cyan-500 px-3 py-1.5 text-sm font-semibold text-slate-950" onClick={onCreateSchedule}>
             予定追加
           </button>
           </div>
         </div>
-        <div className="max-h-[48vh] space-y-2 overflow-y-auto overscroll-contain touch-pan-y pr-1">
-          {dayItems.map((item) => (
-            <article key={item.id} className="rounded-2xl border border-slate-700 bg-slate-800 p-3">
+        <div ref={sheetListRef} data-sheet-scroll="true" className="max-h-[48vh] space-y-2 overflow-y-auto overscroll-contain touch-pan-y pr-1">
+          {dayItems.map((item, idx) => (
+            <article key={item.id} className="schedule-card-enter rounded-2xl border border-slate-700 bg-slate-800 p-3" style={{ animationDelay: `${idx * 45}ms` }}>
               <ScheduleCard
                 schedule={item}
                 tags={tags}

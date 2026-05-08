@@ -32,3 +32,125 @@ select {
 #root {
   min-height: 100vh;
 }
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes soft-breathe {
+  0%,
+  100% {
+    transform: translateY(0);
+    filter: brightness(1);
+  }
+  50% {
+    transform: translateY(-1px);
+    filter: brightness(1.06);
+  }
+}
+
+@keyframes title-glow {
+  0%,
+  100% {
+    text-shadow: 0 0 0 rgba(34, 211, 238, 0);
+  }
+  50% {
+    text-shadow: 0 0 14px rgba(34, 211, 238, 0.35);
+  }
+}
+
+.app-shell-enter {
+  animation: fade-in 360ms ease-out both;
+}
+
+.panel-fade-in {
+  animation: fade-in-up 420ms ease-out both;
+}
+
+.tag-row-slide-in {
+  animation: fade-in-up 460ms ease-out both;
+}
+
+.sheet-fade-in {
+  animation: fade-in 260ms ease-out both;
+}
+
+.chart-pop {
+  animation: fade-in-up 520ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.calendar-cell-enter {
+  animation: fade-in-up 380ms ease-out both;
+}
+
+.schedule-card-enter {
+  animation: fade-in-up 300ms ease-out both;
+}
+
+.modal-backdrop-enter {
+  animation: fade-in 200ms ease-out both;
+}
+
+.modal-card-enter {
+  animation: fade-in-up 220ms ease-out both;
+}
+
+.title-glow {
+  animation: title-glow 2.8s ease-in-out infinite;
+}
+
+.chip-breathe {
+  animation: soft-breathe 2.6s ease-in-out infinite;
+}
+
+.interactive-lift {
+  transition: transform 180ms ease, box-shadow 180ms ease, filter 180ms ease;
+}
+
+.interactive-lift:active {
+  transform: scale(0.97);
+  filter: brightness(1.08);
+}
+
+@media (hover: hover) {
+  .interactive-lift:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.35);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell-enter,
+  .panel-fade-in,
+  .tag-row-slide-in,
+  .sheet-fade-in,
+  .chart-pop,
+  .calendar-cell-enter,
+  .schedule-card-enter,
+  .modal-backdrop-enter,
+  .modal-card-enter,
+  .title-glow,
+  .chip-breathe {
+    animation: none !important;
+  }
+
+  .interactive-lift {
+    transition: none;
+  }
+}
