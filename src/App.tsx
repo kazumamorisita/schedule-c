@@ -129,6 +129,7 @@ function App() {
 
   const [currentMonth, setCurrentMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [selectedDate, setSelectedDate] = useState(isoToday);
+  const [searchQuery, setSearchQuery] = useState("");
   const [activeTags, setActiveTags] = useState<string[]>(tags.map((t) => t.id));
   const [sheetOpen, setSheetOpen] = useState(true);
   const [sheetOffset, setSheetOffset] = useState(0);
@@ -145,16 +146,21 @@ function App() {
   );
 
   const visibleSchedules = expanded.filter((s) => activeTags.includes(s.tagId));
-  const monthVisibleSchedules = visibleSchedules.filter((s) => s.date >= monthStart && s.date <= monthEnd);
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+  const filteredSchedules = visibleSchedules.filter((s) => {
+    if (!normalizedSearch) return true;
+    return s.title.toLowerCase().includes(normalizedSearch) || s.description.toLowerCase().includes(normalizedSearch);
+  });
+  const monthVisibleSchedules = filteredSchedules.filter((s) => s.date >= monthStart && s.date <= monthEnd);
 
   const byDate = useMemo(() => {
     const map: Record<string, Schedule[]> = {};
-    for (const s of visibleSchedules) {
+    for (const s of filteredSchedules) {
       map[s.date] ??= [];
       map[s.date].push(s);
     }
     return map;
-  }, [visibleSchedules]);
+  }, [filteredSchedules]);
 
   const dayItems = byDate[selectedDate] ?? [];
   const tagDistribution = useMemo(() => {
@@ -263,7 +269,7 @@ function App() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-6xl flex-col overflow-hidden p-2 text-slate-100 md:p-6">
-      <section className="h-[calc(100vh-120px)] overflow-hidden rounded-3xl border border-slate-700/50 bg-slate-900/75 p-3 pb-40 shadow-soft backdrop-blur md:h-auto md:overflow-visible md:pb-6 md:p-6">
+      <section className="h-[calc(100vh-120px)] overflow-y-auto rounded-3xl border border-slate-700/50 bg-slate-900/75 p-3 pb-4 shadow-soft backdrop-blur md:h-auto md:overflow-visible md:pb-6 md:p-6">
         <header className="mb-4 space-y-2">
           <div className="min-w-0">
             <h1 className="text-2xl font-bold">Smart Schedule</h1>
@@ -300,6 +306,15 @@ function App() {
             </div>
           </div>
         </header>
+        <div className="mb-3">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="予定をキーワード検索"
+            className="w-full rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-cyan-400"
+          />
+        </div>
 
         <div className="grid grid-cols-7 gap-2 text-center text-xs text-slate-300">
           {["日", "月", "火", "水", "木", "金", "土"].map((d) => (
