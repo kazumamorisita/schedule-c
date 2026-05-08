@@ -718,6 +718,7 @@ function App() {
                 : isSaturday
                   ? "border-sky-900/50 bg-sky-950/30"
                   : "border-slate-700 bg-slate-800/60";
+            if (!inMonth) return <div key={iso} className="aspect-square" />;
             return (
               <button
                 key={iso}
@@ -729,7 +730,7 @@ function App() {
                   cellBg
                 } ${
                   isToday ? "ring-2 ring-amber-300/80 ring-offset-1 ring-offset-slate-900" : ""
-                } ${inMonth ? "" : "opacity-35"} calendar-cell-enter interactive-lift`}
+                } calendar-cell-enter interactive-lift`}
                 style={{ animationDelay: `${(idx % 14) * 18}ms` }}
               >
                 <div className={`text-xs font-semibold md:text-sm ${dateTextColor}`}>
