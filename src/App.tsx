@@ -269,7 +269,7 @@ function App() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-6xl flex-col overflow-hidden p-2 text-slate-100 md:p-6">
-      <section className="h-[calc(100vh-120px)] overflow-y-auto rounded-3xl border border-slate-700/50 bg-slate-900/75 p-3 pb-4 shadow-soft backdrop-blur md:h-auto md:overflow-visible md:pb-6 md:p-6">
+      <section className="h-[calc(100vh-120px)] overflow-hidden rounded-3xl border border-slate-700/50 bg-slate-900/75 p-3 pb-4 shadow-soft backdrop-blur md:h-auto md:overflow-visible md:pb-6 md:p-6">
         <header className="mb-4 space-y-2">
           <div className="min-w-0">
             <h1 className="text-2xl font-bold">Smart Schedule</h1>
@@ -486,7 +486,7 @@ function App() {
             予定追加
           </button>
         </div>
-        <div className="max-h-[48vh] space-y-2 overflow-y-auto pr-1">
+        <div className="max-h-[48vh] space-y-2 overflow-y-auto overscroll-contain pr-1">
           {dayItems.map((item) => (
             <article key={item.id} className="rounded-2xl border border-slate-700 bg-slate-800 p-3">
               <ScheduleCard
