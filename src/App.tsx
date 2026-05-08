@@ -316,21 +316,21 @@ function App() {
           />
         </div>
 
-        <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="mb-3 flex flex-nowrap items-center gap-2 overflow-x-auto pb-1 pr-1 touch-pan-x">
           {tags.map((t) => (
             <button
               key={t.id}
               onClick={() =>
                 setActiveTags((prev) => (prev.includes(t.id) ? prev.filter((id) => id !== t.id) : [...prev, t.id]))
               }
-              className={`rounded-full px-3 py-1 text-xs font-semibold ${activeTags.includes(t.id) ? "opacity-100" : "opacity-35"}`}
+              className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${activeTags.includes(t.id) ? "opacity-100" : "opacity-35"}`}
               style={{ backgroundColor: t.color, color: "#0f172a" }}
             >
               {t.name}
             </button>
           ))}
           <button
-            className="inline-flex items-center gap-1 rounded-xl border border-slate-500 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-100"
+            className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-slate-500 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-100"
             onClick={onExport}
             aria-label="JSONエクスポート"
             title="JSONエクスポート"
@@ -338,7 +338,7 @@ function App() {
             <span aria-hidden>⬇</span>
           </button>
           <button
-            className="inline-flex items-center gap-1 rounded-xl border border-cyan-500/70 bg-cyan-500/15 px-3 py-1.5 text-xs font-semibold text-cyan-200"
+            className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-cyan-500/70 bg-cyan-500/15 px-3 py-1.5 text-xs font-semibold text-cyan-200"
             onClick={() => fileRef.current?.click()}
             aria-label="JSONインポート"
             title="JSONインポート"
@@ -346,7 +346,7 @@ function App() {
             <span aria-hidden>⬆</span>
           </button>
           <button
-            className="inline-flex items-center gap-1 rounded-xl border border-violet-500/70 bg-violet-500/15 px-3 py-1.5 text-xs font-semibold text-violet-200"
+            className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-violet-500/70 bg-violet-500/15 px-3 py-1.5 text-xs font-semibold text-violet-200"
             onClick={() => setIsTagEditorOpen(true)}
             aria-label="タグ編集"
             title="タグ編集"
