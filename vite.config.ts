@@ -61,6 +61,7 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, "index.html"),
         stopwatch: resolve(__dirname, "stopwatch.html"),
+        game: resolve(__dirname, "game.html"),
       },
     },
   },

@@ -228,6 +228,7 @@ type Schedule = {
   reminderMinutes: number;
   location: string;
   url: string;
+  source?: "manual" | "stopwatch";
 };
 
 type LegacyEvent = {
@@ -276,7 +277,8 @@ const defaultData: Schedule[] = [
     repeat: "weekly",
     reminderMinutes: 0,
     location: "",
-    url: ""
+    url: "",
+    source: "manual"
   }
 ];
 
@@ -703,7 +705,8 @@ function App() {
       repeat: "none",
       reminderMinutes: 0,
       location: "",
-      url: ""
+      url: "",
+      source: "manual"
     };
     persist([...baseSchedules, next]);
     setSheetOpen(true);
@@ -747,7 +750,8 @@ function App() {
         repeat: "none",
         reminderMinutes: 0,
         location: "",
-        url: ""
+        url: "",
+        source: "manual"
       });
     };
     r.onend = () => setIsVoiceListening(false);
@@ -950,6 +954,15 @@ function App() {
                 onClick={() => (isVoiceListening ? stopGlobalVoiceInput() : startGlobalVoiceInput())}
               >
                 🎤
+              </button>
+              <button
+                className="rounded-full bg-slate-700/80 px-3 py-1 text-xs font-semibold text-slate-300 transition hover:bg-amber-600 hover:text-white"
+                title="育成画面へ"
+                onClick={() => {
+                  window.location.href = `${import.meta.env.BASE_URL}game.html`;
+                }}
+              >
+                ⚔
               </button>
             </div>
             <div className="w-full">

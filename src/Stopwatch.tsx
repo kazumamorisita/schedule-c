@@ -14,6 +14,7 @@ type Schedule = {
   reminderMinutes: number;
   location: string;
   url: string;
+  source?: "manual" | "stopwatch";
 };
 
 // ── 定数 ─────────────────────────────────────────────────────
@@ -150,6 +151,7 @@ export default function Stopwatch() {
       reminderMinutes: 0,
       location: "",
       url: "",
+      source: "stopwatch",
     };
     const raw = localStorage.getItem(STORAGE_KEY);
     let existing: Schedule[] = [];
