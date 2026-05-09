@@ -264,6 +264,20 @@ function App() {
   const sheetListRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // ストップウォッチ別ウィンドウからの保存を自動反映
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEY && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue) as Schedule[];
+          if (Array.isArray(parsed)) setBaseSchedules(parsed);
+        } catch { /* ignore */ }
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
   const monthStart = toISO(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1));
   const monthEnd = toISO(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0));
 
@@ -636,6 +650,19 @@ function App() {
                   {mode === "month" ? "月" : mode === "week" ? "週" : "日"}
                 </button>
               ))}
+              <button
+                className="rounded-full bg-slate-700/80 px-3 py-1 text-xs font-semibold text-slate-300 transition hover:bg-violet-600 hover:text-white"
+                title="ストップウォッチで活動を記録"
+                onClick={() =>
+                  window.open(
+                    `${import.meta.env.BASE_URL}stopwatch.html`,
+                    "stopwatch",
+                    "width=420,height=640,location=no,menubar=no,toolbar=no,status=no"
+                  )
+                }
+              >
+                ⏱
+              </button>
             </div>
             <div className="w-full">
               <div className="chart-pop w-full rounded-xl border border-slate-700 bg-slate-800/70 p-2">
