@@ -170,9 +170,19 @@ export default function Stopwatch() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center pt-10 px-6 pb-10">
       {/* ヘッダー */}
-      <div className="mb-2 flex items-center gap-2">
-        <span className="text-2xl">⏱</span>
-        <h1 className="text-lg font-bold tracking-wide text-cyan-400">ストップウォッチ</h1>
+      {/* ヘッダー行 */}
+      <div className="mb-2 flex w-full max-w-sm items-center justify-between">
+        <a
+          href={`${import.meta.env.BASE_URL}`}
+          className="flex items-center gap-1 rounded-full border border-slate-700 bg-slate-800/80 px-3 py-1.5 text-xs font-semibold text-slate-300 transition hover:bg-slate-700 active:scale-95"
+        >
+          ← カレンダー
+        </a>
+        <div className="flex items-center gap-2">
+          <span className="text-xl">⏱</span>
+          <h1 className="text-base font-bold tracking-wide text-cyan-400">ストップウォッチ</h1>
+        </div>
+        <div className="w-20" />{/* 右側バランサー */}
       </div>
       <p className="mb-8 text-xs text-slate-500 text-center">
         活動を計測してカレンダーに記録します
@@ -259,7 +269,8 @@ export default function Stopwatch() {
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="タイトル（例：集中作業、散歩）"
-            className="w-full rounded-xl border border-slate-600 bg-slate-700/80 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-cyan-400 placeholder:text-slate-500"
+            style={{ fontSize: "16px" }}
+            className="w-full rounded-xl border border-slate-600 bg-slate-700/80 px-3 py-2 text-slate-100 outline-none transition focus:border-cyan-400 placeholder:text-slate-500"
           />
 
           <textarea
@@ -267,13 +278,15 @@ export default function Stopwatch() {
             onChange={(e) => setDescription(e.target.value)}
             placeholder="メモ（任意）"
             rows={2}
-            className="w-full resize-none rounded-xl border border-slate-600 bg-slate-700/80 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-cyan-400 placeholder:text-slate-500"
+            style={{ fontSize: "16px" }}
+            className="w-full resize-none rounded-xl border border-slate-600 bg-slate-700/80 px-3 py-2 text-slate-100 outline-none transition focus:border-cyan-400 placeholder:text-slate-500"
           />
 
           <select
             value={tagId}
             onChange={(e) => setTagId(e.target.value)}
-            className="w-full rounded-xl border border-slate-600 bg-slate-700/80 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-cyan-400"
+            style={{ fontSize: "16px" }}
+            className="w-full rounded-xl border border-slate-600 bg-slate-700/80 px-3 py-2 text-slate-100 outline-none transition focus:border-cyan-400"
           >
             {tags.map((t) => (
               <option key={t.id} value={t.id}>{t.name}</option>
