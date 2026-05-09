@@ -282,9 +282,15 @@ function App() {
 
   const byDate = useMemo(() => {
     const map: Record<string, Schedule[]> = {};
+    if (!filteredSchedules || !Array.isArray(filteredSchedules)) return map;
     for (const s of filteredSchedules) {
-      map[s.date] ??= [];
-      map[s.date].push(s);
+      if (!s || !s.date) continue;
+      if (!map[s.date]) {
+        map[s.date] = [];
+      }
+      if (map[s.date]) {
+        map[s.date].push(s);
+      }
     }
     return map;
   }, [filteredSchedules]);
