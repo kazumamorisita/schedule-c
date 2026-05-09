@@ -1,5 +1,46 @@
-import { ChangeEvent, CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+// ── 音声入力型定義 ──────────────────────────────────────────
+// ── 音声入力型定義 ──────────────────────────────────────────
+type SpeechRecognitionEvent = Event & {
+  results: { [idx: number]: { [alt: number]: { transcript: string } } };
+};
+type SpeechRecognitionInstance = EventTarget & {
+  lang: string;
+  interimResults: boolean;
+  maxAlternatives: number;
+  onresult: ((e: SpeechRecognitionEvent) => void) | null;
+  onend: (() => void) | null;
+  onerror: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+};
+type SpeechRecognitionConstructor = new () => SpeechRecognitionInstance;
+
+// ── 絵文字マッピング ─────────────────────────────────────────
+const EMOJI_MAP: { keywords: string[]; emoji: string; emotion: string; emotionColor: string }[] = [
+  { keywords: ["会議", "ミーティング", "mtg", "打ち合わせ", "定例"], emoji: "📋", emotion: "真剣モード", emotionColor: "bg-blue-500/20 text-blue-300 border-blue-500/40" },
+  { keywords: ["ランチ", "昼食", "ご飯", "食事", "夕食", "朝食", "飲み", "ごはん"], emoji: "🍜", emotion: "おいしい予感", emotionColor: "bg-orange-500/20 text-orange-300 border-orange-500/40" },
+  { keywords: ["運動", "ジム", "筋トレ", "ランニング", "ウォーキング", "散歩", "ヨガ", "スポーツ", "走"], emoji: "💪", emotion: "やる気満々", emotionColor: "bg-green-500/20 text-green-300 border-green-500/40" },
+  { keywords: ["勉強", "学習", "読書", "本", "授業", "講義", "試験", "テスト", "資格"], emoji: "📚", emotion: "学びの時間", emotionColor: "bg-violet-500/20 text-violet-300 border-violet-500/40" },
+  { keywords: ["旅行", "出張", "空港", "新幹線", "電車", "移動"], emoji: "✈️", emotion: "旅立ちの気分", emotionColor: "bg-sky-500/20 text-sky-300 border-sky-500/40" },
+  { keywords: ["病院", "歯医者", "診察", "健診", "医者", "薬"], emoji: "🏥", emotion: "お大事に…", emotionColor: "bg-red-500/20 text-red-300 border-red-500/40" },
+  { keywords: ["誕生日", "パーティ", "お祝い", "記念日", "結婚"], emoji: "🎉", emotion: "テンション爆上がり", emotionColor: "bg-pink-500/20 text-pink-300 border-pink-500/40" },
+  { keywords: ["休み", "休暇", "休日", "有休", "オフ", "のんびり"], emoji: "😴", emotion: "のんびりモード", emotionColor: "bg-slate-500/20 text-slate-300 border-slate-500/40" },
+  { keywords: ["残業", "徹夜", "深夜", "追い込み", "締め切り", "期限"], emoji: "😰", emotion: "ちょっとしんどい", emotionColor: "bg-amber-500/20 text-amber-300 border-amber-500/40" },
+  { keywords: ["デート", "映画", "コンサート", "ライブ", "展示", "観劇"], emoji: "🎭", emotion: "楽しみすぎる", emotionColor: "bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-500/40" },
+  { keywords: ["買い物", "ショッピング", "購入"], emoji: "🛍️", emotion: "お財布が心配", emotionColor: "bg-yellow-500/20 text-yellow-300 border-yellow-500/40" },
+  { keywords: ["掃除", "洗濯", "料理", "家事"], emoji: "🏠", emotion: "えらい！", emotionColor: "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" },
+];
+
+function detectEmoji(text: string): typeof EMOJI_MAP[0] | null {
+  const lower = text.toLowerCase();
+  for (const entry of EMOJI_MAP) {
+    if (entry.keywords.some((kw) => lower.includes(kw))) return entry;
+  }
+  return null;
+}
 type Repeat = "none" | "daily" | "weekly" | "monthly";
 
 type Tag = {
@@ -952,8 +993,50 @@ function ScheduleCard({
   onUpdate: (next: Schedule) => void;
   onDelete: () => void;
 }) {
+  const [listenTarget, setListenTarget] = useState<"title" | "description" | null>(null);
+  const [isListening, setIsListening] = useState(false);
+  const recogRef = useRef<SpeechRecognitionInstance | null>(null);
+
+  const detected = useMemo(() => detectEmoji(schedule.title + " " + schedule.description), [schedule.title, schedule.description]);
+
+  const startVoice = useCallback((target: "title" | "description") => {
+    const SR: SpeechRecognitionConstructor | undefined =
+      (window as unknown as Record<string, unknown>)["SpeechRecognition"] as SpeechRecognitionConstructor | undefined
+      ?? (window as unknown as Record<string, unknown>)["webkitSpeechRecognition"] as SpeechRecognitionConstructor | undefined;
+    if (!SR) { alert("このブラウザは音声入力に対応していません"); return; }
+    if (recogRef.current) recogRef.current.abort();
+    const r: SpeechRecognitionInstance = new SR();
+    r.lang = "ja-JP";
+    r.interimResults = false;
+    r.maxAlternatives = 1;
+    recogRef.current = r;
+    setListenTarget(target);
+    setIsListening(true);
+    r.onresult = (e: SpeechRecognitionEvent) => {
+      const text = e.results[0][0].transcript;
+      if (target === "title") onUpdate({ ...schedule, title: text });
+      else onUpdate({ ...schedule, description: text });
+    };
+    r.onend = () => { setIsListening(false); setListenTarget(null); };
+    r.onerror = () => { setIsListening(false); setListenTarget(null); };
+    r.start();
+  }, [schedule, onUpdate]);
+
+  const stopVoice = useCallback(() => {
+    recogRef.current?.stop();
+    setIsListening(false);
+    setListenTarget(null);
+  }, []);
+
   return (
     <div className="space-y-2">
+      {/* 感情バッジ */}
+      {detected && (
+        <div className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-semibold ${detected.emotionColor}`}>
+          <span className="text-base">{detected.emoji}</span>
+          <span>{detected.emotion}</span>
+        </div>
+      )}
       <div className="flex items-center justify-end">
         <button
           className="rounded-lg bg-rose-500/90 px-2.5 py-1 text-xs font-semibold text-white"
@@ -962,17 +1045,62 @@ function ScheduleCard({
           削除
         </button>
       </div>
-      <input
-        className="w-full rounded-lg bg-slate-700 px-2 py-1 text-base"
-        value={schedule.title}
-        onChange={(e) => onUpdate({ ...schedule, title: e.target.value })}
-      />
-      <textarea
-        className="w-full rounded-lg bg-slate-700 px-2 py-1 text-base"
-        rows={2}
-        value={schedule.description}
-        onChange={(e) => onUpdate({ ...schedule, description: e.target.value })}
-      />
+      {/* タイトル + マイクボタン */}
+      <div className="flex gap-1.5">
+        <input
+          className="min-w-0 flex-1 rounded-lg bg-slate-700 px-2 py-1 text-base"
+          value={schedule.title}
+          placeholder="タイトル"
+          onChange={(e) => onUpdate({ ...schedule, title: e.target.value })}
+        />
+        <button
+          title="音声でタイトル入力"
+          onClick={() => isListening && listenTarget === "title" ? stopVoice() : startVoice("title")}
+          className={`shrink-0 rounded-lg px-2 py-1 text-base transition ${
+            isListening && listenTarget === "title"
+              ? "animate-pulse bg-rose-500 text-white"
+              : "bg-slate-600 text-slate-300 hover:bg-violet-600 hover:text-white"
+          }`}
+        >
+          🎤
+        </button>
+      </div>
+      {/* 絵文字提案バー */}
+      {!detected && schedule.title.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {EMOJI_MAP.slice(0, 6).map((entry) => (
+            <button
+              key={entry.emoji}
+              title={entry.keywords[0]}
+              onClick={() => onUpdate({ ...schedule, title: entry.emoji + " " + schedule.title.replace(/^[\p{Emoji}\s]+/u, "") })}
+              className="rounded-lg border border-slate-600 bg-slate-700/60 px-2 py-0.5 text-base transition hover:bg-violet-600/40"
+            >
+              {entry.emoji}
+            </button>
+          ))}
+        </div>
+      )}
+      {/* メモ + マイクボタン */}
+      <div className="flex gap-1.5">
+        <textarea
+          className="min-w-0 flex-1 rounded-lg bg-slate-700 px-2 py-1 text-base"
+          rows={2}
+          value={schedule.description}
+          placeholder="メモ"
+          onChange={(e) => onUpdate({ ...schedule, description: e.target.value })}
+        />
+        <button
+          title="音声でメモ入力"
+          onClick={() => isListening && listenTarget === "description" ? stopVoice() : startVoice("description")}
+          className={`shrink-0 self-stretch rounded-lg px-2 text-base transition ${
+            isListening && listenTarget === "description"
+              ? "animate-pulse bg-rose-500 text-white"
+              : "bg-slate-600 text-slate-300 hover:bg-violet-600 hover:text-white"
+          }`}
+        >
+          🎤
+        </button>
+      </div>
       <div className="grid grid-cols-2 gap-2">
         <input
           type="time"
