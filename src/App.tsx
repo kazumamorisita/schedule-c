@@ -41,6 +41,173 @@ function detectEmoji(text: string): typeof EMOJI_MAP[0] | null {
   }
   return null;
 }
+
+function toHHMM(hour: number, minute: number): string {
+  const h = Math.min(23, Math.max(0, hour));
+  const m = Math.min(59, Math.max(0, minute));
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+function addMinutesToTime(time: string, minutes: number): string {
+  const [h, m] = time.split(":").map(Number);
+  const base = h * 60 + m + minutes;
+  const wrap = ((base % (24 * 60)) + (24 * 60)) % (24 * 60);
+  return toHHMM(Math.floor(wrap / 60), wrap % 60);
+}
+
+function kanjiDigitToNumber(char: string): number {
+  const map: Record<string, number> = {
+    "〇": 0,
+    "零": 0,
+    "一": 1,
+    "二": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+    "0": 0,
+    "1": 1,
+    "2": 2,
+    "3": 3,
+    "4": 4,
+    "5": 5,
+    "6": 6,
+    "7": 7,
+    "8": 8,
+    "9": 9
+  };
+  return map[char] ?? NaN;
+}
+
+function parseJapaneseNumber(raw: string): number | null {
+  const text = raw.trim();
+  if (!text) return null;
+
+  if (/^[0-9]+$/.test(text)) {
+    const n = Number(text);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  // 十を含む一般的な和数字（例: 十, 十一, 二十, 二十三）
+  if (text.includes("十")) {
+    const [left, right] = text.split("十");
+    const tens = left === "" ? 1 : Number.isNaN(kanjiDigitToNumber(left)) ? null : kanjiDigitToNumber(left);
+    const ones = right === "" ? 0 : Number.isNaN(kanjiDigitToNumber(right)) ? null : kanjiDigitToNumber(right);
+    if (tens === null || ones === null) return null;
+    return tens * 10 + ones;
+  }
+
+  // 連続表記（例: 二〇二六）
+  const chars = [...text];
+  const nums = chars.map((c) => kanjiDigitToNumber(c));
+  if (nums.some((n) => Number.isNaN(n))) return null;
+  return Number(nums.join(""));
+}
+
+function parseVoiceScheduleInput(rawText: string, baseDate: string): { title: string; date?: string; startTime?: string } {
+  let text = rawText
+    .replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xfee0))
+    .trim();
+  let parsedDate: string | undefined;
+  let parsedTime: string | undefined;
+
+  // 相対日付
+  const relativeDateRules: Array<{ re: RegExp; offset: number }> = [
+    { re: /明後日|あさって/, offset: 2 },
+    { re: /明日/, offset: 1 },
+    { re: /今日|きょう/, offset: 0 }
+  ];
+  for (const rule of relativeDateRules) {
+    if (rule.re.test(text)) {
+      parsedDate = addDays(isoToday, rule.offset);
+      text = text.replace(rule.re, " ");
+      break;
+    }
+  }
+
+  // 絶対日付（2026年5月9日 / 5月9日）
+  const ymd = text.match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
+  if (ymd) {
+    const y = Number(ymd[1]);
+    const m = Number(ymd[2]);
+    const d = Number(ymd[3]);
+    parsedDate = toISO(new Date(y, m - 1, d));
+    text = text.replace(ymd[0], " ");
+  } else {
+    const md = text.match(/(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
+    if (md) {
+      const base = parseISO(baseDate);
+      const y = base.getFullYear();
+      const m = Number(md[1]);
+      const d = Number(md[2]);
+      parsedDate = toISO(new Date(y, m - 1, d));
+      text = text.replace(md[0], " ");
+    }
+  }
+
+  // 漢数字日付（例: 二〇二六年五月九日 / 六月一日）
+  if (!parsedDate) {
+    const ymdKanji = text.match(/([〇零一二三四五六七八九十0-9]{2,4})\s*年\s*([〇零一二三四五六七八九十0-9]{1,3})\s*月\s*([〇零一二三四五六七八九十0-9]{1,3})\s*日/);
+    if (ymdKanji) {
+      const y = parseJapaneseNumber(ymdKanji[1]);
+      const m = parseJapaneseNumber(ymdKanji[2]);
+      const d = parseJapaneseNumber(ymdKanji[3]);
+      if (y && m && d) {
+        parsedDate = toISO(new Date(y, m - 1, d));
+        text = text.replace(ymdKanji[0], " ");
+      }
+    } else {
+      const mdKanji = text.match(/([〇零一二三四五六七八九十0-9]{1,3})\s*月\s*([〇零一二三四五六七八九十0-9]{1,3})\s*日/);
+      if (mdKanji) {
+        const base = parseISO(baseDate);
+        const y = base.getFullYear();
+        const m = parseJapaneseNumber(mdKanji[1]);
+        const d = parseJapaneseNumber(mdKanji[2]);
+        if (m && d) {
+          parsedDate = toISO(new Date(y, m - 1, d));
+          text = text.replace(mdKanji[0], " ");
+        }
+      }
+    }
+  }
+
+  // 時刻（午後3時 / 15:30 / 15時30分 / 15時）
+  const ampm = text.match(/(午前|午後)\s*(\d{1,2})\s*時(?:\s*(\d{1,2})\s*分?)?\s*(?:から)?/);
+  if (ampm) {
+    let hour = Number(ampm[2]);
+    const minute = Number(ampm[3] ?? 0);
+    if (ampm[1] === "午後" && hour < 12) hour += 12;
+    if (ampm[1] === "午前" && hour === 12) hour = 0;
+    parsedTime = toHHMM(hour, minute);
+    text = text.replace(ampm[0], " ");
+  } else {
+    const hhmm = text.match(/(\d{1,2})\s*[:：]\s*(\d{1,2})\s*(?:から)?/);
+    if (hhmm) {
+      parsedTime = toHHMM(Number(hhmm[1]), Number(hhmm[2]));
+      text = text.replace(hhmm[0], " ");
+    } else {
+      const hourOnly = text.match(/(\d{1,2})\s*時(?:\s*(\d{1,2})\s*分?)?\s*(?:から)?/);
+      if (hourOnly) {
+        parsedTime = toHHMM(Number(hourOnly[1]), Number(hourOnly[2] ?? 0));
+        text = text.replace(hourOnly[0], " ");
+      }
+    }
+  }
+
+  const title = text
+    .replace(/(予定|開始|から|に|の|は|です|する|します)/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return {
+    title: title || rawText.trim(),
+    date: parsedDate,
+    startTime: parsedTime
+  };
+}
 type Repeat = "none" | "daily" | "weekly" | "monthly";
 
 type Tag = {
@@ -300,10 +467,13 @@ function App() {
   const [sheetOffset, setSheetOffset] = useState(0);
   const [isTagEditorOpen, setIsTagEditorOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"month" | "week" | "day">("month");
+  const [isVoiceListening, setIsVoiceListening] = useState(false);
+  const [voiceDraft, setVoiceDraft] = useState<Omit<Schedule, "id"> | null>(null);
   const dragStartY = useRef<number | null>(null);
   const dragStartedInScrollable = useRef(false);
   const sheetListRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const voiceRecRef = useRef<SpeechRecognitionInstance | null>(null);
 
   // ストップウォッチ別ウィンドウからの保存を自動反映
   useEffect(() => {
@@ -539,6 +709,72 @@ function App() {
     setSheetOpen(true);
   };
 
+  const stopGlobalVoiceInput = useCallback(() => {
+    voiceRecRef.current?.stop();
+    setIsVoiceListening(false);
+  }, []);
+
+  const startGlobalVoiceInput = useCallback(() => {
+    const SR: SpeechRecognitionConstructor | undefined =
+      (window as unknown as Record<string, unknown>)["SpeechRecognition"] as SpeechRecognitionConstructor | undefined
+      ?? (window as unknown as Record<string, unknown>)["webkitSpeechRecognition"] as SpeechRecognitionConstructor | undefined;
+    if (!SR) {
+      alert("このブラウザは音声入力に対応していません");
+      return;
+    }
+
+    if (voiceRecRef.current) voiceRecRef.current.abort();
+
+    const r: SpeechRecognitionInstance = new SR();
+    r.lang = "ja-JP";
+    r.interimResults = false;
+    r.maxAlternatives = 1;
+    voiceRecRef.current = r;
+    setIsVoiceListening(true);
+
+    r.onresult = (e: SpeechRecognitionEvent) => {
+      const text = e.results[0][0].transcript;
+      const parsed = parseVoiceScheduleInput(text, selectedDate);
+      const startTime = parsed.startTime ?? "09:00";
+      const date = parsed.date ?? selectedDate;
+      setVoiceDraft({
+        title: parsed.title,
+        description: text,
+        date,
+        startTime,
+        endTime: addMinutesToTime(startTime, 60),
+        tagId: tags[0]?.id ?? "work",
+        repeat: "none",
+        reminderMinutes: 0,
+        location: "",
+        url: ""
+      });
+    };
+    r.onend = () => setIsVoiceListening(false);
+    r.onerror = () => setIsVoiceListening(false);
+    r.start();
+  }, [selectedDate, tags]);
+
+  const onConfirmVoiceDraft = useCallback(() => {
+    if (!voiceDraft) return;
+    const next: Schedule = {
+      id: crypto.randomUUID(),
+      ...voiceDraft
+    };
+    persist([...baseSchedules, next]);
+    setSelectedDate(voiceDraft.date);
+    const d = parseISO(voiceDraft.date);
+    setCurrentMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+    setSheetOpen(true);
+    setVoiceDraft(null);
+  }, [voiceDraft, baseSchedules]);
+
+  useEffect(() => {
+    return () => {
+      voiceRecRef.current?.abort();
+    };
+  }, []);
+
   const onExport = () => {
     const blob = new Blob([JSON.stringify(baseSchedules, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
@@ -703,6 +939,17 @@ function App() {
                 }
               >
                 ⏱
+              </button>
+              <button
+                className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                  isVoiceListening
+                    ? "animate-pulse bg-rose-500 text-white"
+                    : "bg-slate-700/80 text-slate-300 hover:bg-violet-600 hover:text-white"
+                }`}
+                title="音声入力で予定を追加"
+                onClick={() => (isVoiceListening ? stopGlobalVoiceInput() : startGlobalVoiceInput())}
+              >
+                🎤
               </button>
             </div>
             <div className="w-full">
@@ -912,6 +1159,77 @@ function App() {
         </section>
       )}
 
+      {voiceDraft && (
+        <section className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-4 shadow-soft">
+            <h3 className="text-base font-semibold text-cyan-300">音声入力の確認</h3>
+            <p className="mt-1 text-xs text-slate-400">内容を確認・修正してから予定を追加できます。</p>
+
+            <div className="mt-3 space-y-2">
+              <input
+                className="w-full rounded-lg bg-slate-700 px-2 py-1.5 text-base"
+                value={voiceDraft.title}
+                placeholder="タイトル"
+                onChange={(e) => setVoiceDraft((prev) => (prev ? { ...prev, title: e.target.value } : prev))}
+              />
+              <textarea
+                className="w-full rounded-lg bg-slate-700 px-2 py-1.5 text-base"
+                rows={2}
+                value={voiceDraft.description}
+                placeholder="メモ"
+                onChange={(e) => setVoiceDraft((prev) => (prev ? { ...prev, description: e.target.value } : prev))}
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="date"
+                  className="rounded-lg bg-slate-700 px-2 py-1.5 text-base"
+                  value={voiceDraft.date}
+                  onChange={(e) => setVoiceDraft((prev) => (prev ? { ...prev, date: e.target.value } : prev))}
+                />
+                <select
+                  className="rounded-lg bg-slate-700 px-2 py-1.5 text-base"
+                  value={voiceDraft.tagId}
+                  onChange={(e) => setVoiceDraft((prev) => (prev ? { ...prev, tagId: e.target.value } : prev))}
+                >
+                  {tags.map((tag) => (
+                    <option key={tag.id} value={tag.id}>{tag.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="time"
+                  className="rounded-lg bg-slate-700 px-2 py-1.5 text-base"
+                  value={voiceDraft.startTime}
+                  onChange={(e) => setVoiceDraft((prev) => (prev ? { ...prev, startTime: e.target.value } : prev))}
+                />
+                <input
+                  type="time"
+                  className="rounded-lg bg-slate-700 px-2 py-1.5 text-base"
+                  value={voiceDraft.endTime}
+                  onChange={(e) => setVoiceDraft((prev) => (prev ? { ...prev, endTime: e.target.value } : prev))}
+                />
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button
+                className="rounded-lg bg-slate-700 px-3 py-2 text-sm font-semibold text-slate-200"
+                onClick={() => setVoiceDraft(null)}
+              >
+                追加しない
+              </button>
+              <button
+                className="rounded-lg bg-cyan-500 px-3 py-2 text-sm font-semibold text-slate-900"
+                onClick={onConfirmVoiceDraft}
+              >
+                予定を追加
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+
       <section
         className={`sheet-fade-in fixed bottom-0 left-0 right-0 mx-auto w-full max-w-6xl rounded-t-3xl border border-slate-700 bg-slate-900/95 p-4 shadow-soft transition-transform duration-300 ${
           sheetOpen ? "translate-y-0" : "translate-y-[74%]"
@@ -993,40 +1311,7 @@ function ScheduleCard({
   onUpdate: (next: Schedule) => void;
   onDelete: () => void;
 }) {
-  const [listenTarget, setListenTarget] = useState<"title" | "description" | null>(null);
-  const [isListening, setIsListening] = useState(false);
-  const recogRef = useRef<SpeechRecognitionInstance | null>(null);
-
   const detected = useMemo(() => detectEmoji(schedule.title + " " + schedule.description), [schedule.title, schedule.description]);
-
-  const startVoice = useCallback((target: "title" | "description") => {
-    const SR: SpeechRecognitionConstructor | undefined =
-      (window as unknown as Record<string, unknown>)["SpeechRecognition"] as SpeechRecognitionConstructor | undefined
-      ?? (window as unknown as Record<string, unknown>)["webkitSpeechRecognition"] as SpeechRecognitionConstructor | undefined;
-    if (!SR) { alert("このブラウザは音声入力に対応していません"); return; }
-    if (recogRef.current) recogRef.current.abort();
-    const r: SpeechRecognitionInstance = new SR();
-    r.lang = "ja-JP";
-    r.interimResults = false;
-    r.maxAlternatives = 1;
-    recogRef.current = r;
-    setListenTarget(target);
-    setIsListening(true);
-    r.onresult = (e: SpeechRecognitionEvent) => {
-      const text = e.results[0][0].transcript;
-      if (target === "title") onUpdate({ ...schedule, title: text });
-      else onUpdate({ ...schedule, description: text });
-    };
-    r.onend = () => { setIsListening(false); setListenTarget(null); };
-    r.onerror = () => { setIsListening(false); setListenTarget(null); };
-    r.start();
-  }, [schedule, onUpdate]);
-
-  const stopVoice = useCallback(() => {
-    recogRef.current?.stop();
-    setIsListening(false);
-    setListenTarget(null);
-  }, []);
 
   return (
     <div className="space-y-2">
@@ -1045,26 +1330,12 @@ function ScheduleCard({
           削除
         </button>
       </div>
-      {/* タイトル + マイクボタン */}
-      <div className="flex gap-1.5">
-        <input
-          className="min-w-0 flex-1 rounded-lg bg-slate-700 px-2 py-1 text-base"
-          value={schedule.title}
-          placeholder="タイトル"
-          onChange={(e) => onUpdate({ ...schedule, title: e.target.value })}
-        />
-        <button
-          title="音声でタイトル入力"
-          onClick={() => isListening && listenTarget === "title" ? stopVoice() : startVoice("title")}
-          className={`shrink-0 rounded-lg px-2 py-1 text-base transition ${
-            isListening && listenTarget === "title"
-              ? "animate-pulse bg-rose-500 text-white"
-              : "bg-slate-600 text-slate-300 hover:bg-violet-600 hover:text-white"
-          }`}
-        >
-          🎤
-        </button>
-      </div>
+      <input
+        className="w-full rounded-lg bg-slate-700 px-2 py-1 text-base"
+        value={schedule.title}
+        placeholder="タイトル"
+        onChange={(e) => onUpdate({ ...schedule, title: e.target.value })}
+      />
       {/* 絵文字提案バー */}
       {!detected && schedule.title.length > 0 && (
         <div className="flex flex-wrap gap-1">
@@ -1080,27 +1351,13 @@ function ScheduleCard({
           ))}
         </div>
       )}
-      {/* メモ + マイクボタン */}
-      <div className="flex gap-1.5">
-        <textarea
-          className="min-w-0 flex-1 rounded-lg bg-slate-700 px-2 py-1 text-base"
-          rows={2}
-          value={schedule.description}
-          placeholder="メモ"
-          onChange={(e) => onUpdate({ ...schedule, description: e.target.value })}
-        />
-        <button
-          title="音声でメモ入力"
-          onClick={() => isListening && listenTarget === "description" ? stopVoice() : startVoice("description")}
-          className={`shrink-0 self-stretch rounded-lg px-2 text-base transition ${
-            isListening && listenTarget === "description"
-              ? "animate-pulse bg-rose-500 text-white"
-              : "bg-slate-600 text-slate-300 hover:bg-violet-600 hover:text-white"
-          }`}
-        >
-          🎤
-        </button>
-      </div>
+      <textarea
+        className="w-full rounded-lg bg-slate-700 px-2 py-1 text-base"
+        rows={2}
+        value={schedule.description}
+        placeholder="メモ"
+        onChange={(e) => onUpdate({ ...schedule, description: e.target.value })}
+      />
       <div className="grid grid-cols-2 gap-2">
         <input
           type="time"
