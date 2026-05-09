@@ -316,7 +316,13 @@ function App() {
         return s.title.toLowerCase().includes(normalizedSearch) || s.description.toLowerCase().includes(normalizedSearch) || (s.location ?? "").toLowerCase().includes(normalizedSearch);
       });
     for (const s of filtered) {
-      map[s.date].push(s);
+      if (!s || !s.date) continue;
+      if (!map[s.date]) {
+        map[s.date] = [];
+      }
+      if (map[s.date]) {
+        map[s.date].push(s);
+      }
     }
     return map;
   }, [timelineExpanded, activeTags, normalizedSearch]);
