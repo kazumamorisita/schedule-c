@@ -261,6 +261,7 @@ const TAGS: Tag[] = [
 
 const STORAGE_KEY = "schedule-app-data-v1";
 const TAG_STORAGE_KEY = "schedule-app-tags-v1";
+const CALENDAR_SIGNAL_STORAGE_KEY = "schedule-app-calendar-signals-v1";
 
 const today = new Date();
 const isoToday = toISO(today);
@@ -439,6 +440,29 @@ function getJapaneseHolidays(year: number): Set<string> {
   return set;
 }
 
+function hasScheduleConflict(schedules: Schedule[]): boolean {
+  if (schedules.length < 2) return false;
+  const sorted = [...schedules]
+    .map((schedule) => ({
+      start: timeToMinutes(schedule.startTime),
+      end: timeToMinutes(schedule.endTime)
+    }))
+    .filter((slot) => slot.end > slot.start)
+    .sort((a, b) => a.start - b.start);
+
+  for (let index = 1; index < sorted.length; index += 1) {
+    if (sorted[index].start < sorted[index - 1].end) return true;
+  }
+  return false;
+}
+
+function summarizeDaySignals(schedules: Schedule[]): { hasConflict: boolean; tagCount: number } {
+  return {
+    hasConflict: hasScheduleConflict(schedules),
+    tagCount: new Set(schedules.map((schedule) => schedule.tagId)).size
+  };
+}
+
 function App() {
   const [tags, setTags] = useState<Tag[]>(() => {
     const raw = localStorage.getItem(TAG_STORAGE_KEY);
@@ -469,6 +493,10 @@ function App() {
   const [sheetOffset, setSheetOffset] = useState(0);
   const [isTagEditorOpen, setIsTagEditorOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"month" | "week" | "day">("month");
+  const [showCalendarSignals, setShowCalendarSignals] = useState<boolean>(() => {
+    const raw = localStorage.getItem(CALENDAR_SIGNAL_STORAGE_KEY);
+    return raw !== "0";
+  });
   const [isVoiceListening, setIsVoiceListening] = useState(false);
   const [voiceDraft, setVoiceDraft] = useState<Omit<Schedule, "id"> | null>(null);
   const dragStartY = useRef<number | null>(null);
@@ -490,6 +518,10 @@ function App() {
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem(CALENDAR_SIGNAL_STORAGE_KEY, showCalendarSignals ? "1" : "0");
+  }, [showCalendarSignals]);
 
   const monthStart = toISO(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1));
   const monthEnd = toISO(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0));
@@ -555,6 +587,13 @@ function App() {
   }, [timelineExpanded, activeTags, normalizedSearch]);
 
   const dayItems = viewMode !== "month" ? (timelineByDate[selectedDate] ?? []) : (byDate[selectedDate] ?? []);
+  const daySignalsByDate = useMemo(() => {
+    const signals: Record<string, { hasConflict: boolean; tagCount: number }> = {};
+    for (const [date, schedules] of Object.entries(byDate)) {
+      signals[date] = summarizeDaySignals(schedules);
+    }
+    return signals;
+  }, [byDate]);
   const tagDistribution = useMemo(() => {
     const counts = tags.map((tag) => ({
       ...tag,
@@ -1019,6 +1058,18 @@ function App() {
           >
             タグ
           </button>
+          <button
+            className={`interactive-lift inline-flex shrink-0 items-center gap-1 rounded-xl border px-3 py-1.5 text-xs font-semibold ${
+              showCalendarSignals
+                ? "border-amber-500/70 bg-amber-500/15 text-amber-200"
+                : "border-slate-600 bg-slate-700/50 text-slate-300"
+            }`}
+            onClick={() => setShowCalendarSignals((value) => !value)}
+            aria-label="競合と複数タグの強調表示を切り替え"
+            title="競合と複数タグの強調表示を切り替え"
+          >
+            {showCalendarSignals ? "競合表示 ON" : "競合表示 OFF"}
+          </button>
           <input ref={fileRef} hidden type="file" accept=".json,application/json" onChange={onImport} />
         </div>
         </div>
@@ -1038,12 +1089,15 @@ function App() {
           {dates.map((iso, idx) => {
             const inMonth = iso.startsWith(`${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, "0")}`);
             const daySchedules = byDate[iso] ?? [];
+            const daySignals = daySignalsByDate[iso] ?? { hasConflict: false, tagCount: 0 };
             const isToday = iso === isoToday;
             const dayTagIds = [...new Set(daySchedules.map((item) => item.tagId))];
             const dow = parseISO(iso).getDay();
             const isHoliday = holidays.has(iso);
             const isSunday = dow === 0;
             const isSaturday = dow === 6;
+            const hasConflict = showCalendarSignals && daySignals.hasConflict;
+            const hasMultipleTags = showCalendarSignals && daySignals.tagCount > 1;
             const dateTextColor = isToday
               ? "text-amber-300"
               : isHoliday || isSunday
@@ -1051,13 +1105,17 @@ function App() {
                 : isSaturday
                   ? "text-sky-400"
                   : "";
-            const cellBg = selectedDate === iso
-              ? "border-cyan-400 bg-cyan-500/20"
-              : isHoliday || isSunday
-                ? "border-rose-900/50 bg-rose-950/30"
-                : isSaturday
-                  ? "border-sky-900/50 bg-sky-950/30"
-                  : "border-slate-700 bg-slate-800/60";
+            const cellBg = hasConflict
+              ? "border-rose-400 bg-rose-500/20"
+              : hasMultipleTags
+                ? "border-violet-400 bg-violet-500/15"
+                : selectedDate === iso
+                  ? "border-cyan-400 bg-cyan-500/20"
+                  : isHoliday || isSunday
+                    ? "border-rose-900/50 bg-rose-950/30"
+                    : isSaturday
+                      ? "border-sky-900/50 bg-sky-950/30"
+                      : "border-slate-700 bg-slate-800/60";
             if (!inMonth) return <div key={iso} className="aspect-square" />;
             return (
               <button
@@ -1070,6 +1128,8 @@ function App() {
                   cellBg
                 } ${
                   isToday ? "ring-2 ring-amber-300/80 ring-offset-1 ring-offset-slate-900" : ""
+                } ${
+                  hasConflict ? "shadow-[0_0_0_1px_rgba(251,113,133,.35),0_0_18px_rgba(251,113,133,.12)]" : ""
                 } calendar-cell-enter interactive-lift`}
                 style={{ animationDelay: `${(idx % 14) * 18}ms` }}
               >
@@ -1089,7 +1149,17 @@ function App() {
                       />
                     );
                   })}
+                  {hasMultipleTags && (
+                    <span className="rounded-full bg-violet-500/20 px-1.5 py-0.5 text-[8px] font-bold text-violet-200 md:text-[9px]">
+                      複{daySignals.tagCount}
+                    </span>
+                  )}
                 </div>
+                {hasConflict && (
+                  <span className="absolute left-1.5 bottom-1.5 rounded-full bg-rose-500/90 px-1.5 py-0.5 text-[8px] font-bold text-white md:left-2 md:bottom-2 md:text-[9px]">
+                    競合
+                  </span>
+                )}
                 {daySchedules.length > 0 && (
                   <span className="absolute right-1.5 top-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold md:right-2 md:top-2 md:h-6 md:min-w-6 md:text-xs">
                     {daySchedules.length}
