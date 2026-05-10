@@ -231,6 +231,15 @@ type Schedule = {
   source?: "manual" | "stopwatch";
 };
 
+type PeriodMarker = {
+  id: string;
+  title: string;
+  description: string;
+  startDate: string;
+  endDate: string;
+  color: string;
+};
+
 type LegacyEvent = {
   id?: string;
   title?: string;
@@ -262,6 +271,7 @@ const TAGS: Tag[] = [
 const STORAGE_KEY = "schedule-app-data-v1";
 const TAG_STORAGE_KEY = "schedule-app-tags-v1";
 const CALENDAR_SIGNAL_STORAGE_KEY = "schedule-app-calendar-signals-v1";
+const PERIOD_STORAGE_KEY = "schedule-app-periods-v1";
 
 const today = new Date();
 const isoToday = toISO(today);
@@ -463,6 +473,19 @@ function summarizeDaySignals(schedules: Schedule[]): { hasConflict: boolean; tag
   };
 }
 
+function normalizePeriod(period: PeriodMarker): PeriodMarker {
+  if (period.startDate <= period.endDate) return period;
+  return {
+    ...period,
+    startDate: period.endDate,
+    endDate: period.startDate
+  };
+}
+
+function isDateInRange(date: string, startDate: string, endDate: string): boolean {
+  return date >= startDate && date <= endDate;
+}
+
 function App() {
   const [tags, setTags] = useState<Tag[]>(() => {
     const raw = localStorage.getItem(TAG_STORAGE_KEY);
@@ -484,6 +507,28 @@ function App() {
       return defaultData;
     }
   });
+  const [periods, setPeriods] = useState<PeriodMarker[]>(() => {
+    const raw = localStorage.getItem(PERIOD_STORAGE_KEY);
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw) as PeriodMarker[];
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .filter((item) => isISODate(item.startDate) && isISODate(item.endDate))
+        .map((item) =>
+          normalizePeriod({
+            id: item.id || crypto.randomUUID(),
+            title: item.title || "期間イベント",
+            description: item.description || "",
+            startDate: item.startDate,
+            endDate: item.endDate,
+            color: item.color || "#f59e0b"
+          })
+        );
+    } catch {
+      return [];
+    }
+  });
 
   const [currentMonth, setCurrentMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [selectedDate, setSelectedDate] = useState(isoToday);
@@ -492,6 +537,7 @@ function App() {
   const [sheetOpen, setSheetOpen] = useState(true);
   const [sheetOffset, setSheetOffset] = useState(0);
   const [isTagEditorOpen, setIsTagEditorOpen] = useState(false);
+  const [isPeriodEditorOpen, setIsPeriodEditorOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"month" | "week" | "day">("month");
   const [showCalendarSignals, setShowCalendarSignals] = useState<boolean>(() => {
     const raw = localStorage.getItem(CALENDAR_SIGNAL_STORAGE_KEY);
@@ -587,6 +633,10 @@ function App() {
   }, [timelineExpanded, activeTags, normalizedSearch]);
 
   const dayItems = viewMode !== "month" ? (timelineByDate[selectedDate] ?? []) : (byDate[selectedDate] ?? []);
+  const dayPeriods = useMemo(
+    () => periods.filter((period) => isDateInRange(selectedDate, period.startDate, period.endDate)),
+    [periods, selectedDate]
+  );
   const daySignalsByDate = useMemo(() => {
     const signals: Record<string, { hasConflict: boolean; tagCount: number }> = {};
     for (const [date, schedules] of Object.entries(byDate)) {
@@ -606,6 +656,12 @@ function App() {
   const persist = (next: Schedule[]) => {
     setBaseSchedules(next);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  };
+
+  const persistPeriods = (next: PeriodMarker[]) => {
+    const normalized = next.map(normalizePeriod);
+    setPeriods(normalized);
+    localStorage.setItem(PERIOD_STORAGE_KEY, JSON.stringify(normalized));
   };
 
   // 通知スケジューリング
@@ -654,6 +710,26 @@ function App() {
   }, [baseSchedules, tags]);
 
   const dates = buildMonthGrid(currentMonth);
+  const periodsByDate = useMemo(() => {
+    const map: Record<string, PeriodMarker[]> = {};
+    const from = dates[0];
+    const to = dates[dates.length - 1];
+
+    for (const period of periods) {
+      const normalized = normalizePeriod(period);
+      const start = normalized.startDate < from ? from : normalized.startDate;
+      const end = normalized.endDate > to ? to : normalized.endDate;
+      if (start > end) continue;
+      let cursor = start;
+      while (cursor <= end) {
+        if (!map[cursor]) map[cursor] = [];
+        map[cursor].push(normalized);
+        cursor = addDays(cursor, 1);
+      }
+    }
+
+    return map;
+  }, [periods, dates]);
   const holidays = useMemo(() => {
     const y = currentMonth.getFullYear();
     const set = new Set([...getJapaneseHolidays(y), ...getJapaneseHolidays(y + 1)]);
@@ -1059,6 +1135,14 @@ function App() {
             タグ
           </button>
           <button
+            className="interactive-lift inline-flex shrink-0 items-center gap-1 rounded-xl border border-amber-500/70 bg-amber-500/15 px-3 py-1.5 text-xs font-semibold text-amber-200"
+            onClick={() => setIsPeriodEditorOpen(true)}
+            aria-label="期間イベント編集"
+            title="期間イベント編集"
+          >
+            期間
+          </button>
+          <button
             className={`interactive-lift inline-flex shrink-0 items-center gap-1 rounded-xl border px-3 py-1.5 text-xs font-semibold ${
               showCalendarSignals
                 ? "border-amber-500/70 bg-amber-500/15 text-amber-200"
@@ -1087,8 +1171,11 @@ function App() {
 
         <div className="grid grid-cols-7 gap-1.5 md:gap-2">
           {dates.map((iso, idx) => {
+            const monthPrefix = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, "0")}`;
             const inMonth = iso.startsWith(`${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, "0")}`);
             const daySchedules = byDate[iso] ?? [];
+            const dayPeriodsInCell = periodsByDate[iso] ?? [];
+            const periodFrame = dayPeriodsInCell[0];
             const daySignals = daySignalsByDate[iso] ?? { hasConflict: false, tagCount: 0 };
             const isToday = iso === isoToday;
             const dayTagIds = [...new Set(daySchedules.map((item) => item.tagId))];
@@ -1096,6 +1183,18 @@ function App() {
             const isHoliday = holidays.has(iso);
             const isSunday = dow === 0;
             const isSaturday = dow === 6;
+            const prevDay = addDays(iso, -1);
+            const nextDay = addDays(iso, 1);
+            const isPrevInMonth = prevDay.startsWith(monthPrefix);
+            const isNextInMonth = nextDay.startsWith(monthPrefix);
+            const periodStartsSegment = Boolean(
+              periodFrame &&
+                (iso === periodFrame.startDate || dow === 0 || !isPrevInMonth || !isDateInRange(prevDay, periodFrame.startDate, periodFrame.endDate))
+            );
+            const periodEndsSegment = Boolean(
+              periodFrame &&
+                (iso === periodFrame.endDate || dow === 6 || !isNextInMonth || !isDateInRange(nextDay, periodFrame.startDate, periodFrame.endDate))
+            );
             const hasConflict = showCalendarSignals && daySignals.hasConflict;
             const hasMultipleTags = showCalendarSignals && daySignals.tagCount > 1;
             const dateTextColor = isToday
@@ -1133,6 +1232,20 @@ function App() {
                 } calendar-cell-enter interactive-lift`}
                 style={{ animationDelay: `${(idx % 14) * 18}ms` }}
               >
+                {periodFrame && (
+                  <div
+                    className="pointer-events-none absolute inset-0.5 border-solid"
+                    style={{
+                      borderColor: periodFrame.color,
+                      borderTopWidth: 2,
+                      borderBottomWidth: 2,
+                      borderLeftWidth: periodStartsSegment ? 2 : 0,
+                      borderRightWidth: periodEndsSegment ? 2 : 0,
+                      borderRadius: periodStartsSegment || periodEndsSegment ? 10 : 0,
+                      backgroundColor: `${periodFrame.color}14`
+                    }}
+                  />
+                )}
                 <div className={`text-xs font-semibold md:text-sm ${dateTextColor}`}>
                   <span>{Number(iso.slice(-2))}</span>
                   {isToday && <span className="block text-[9px] leading-tight md:text-[10px]">今日</span>}
@@ -1155,6 +1268,20 @@ function App() {
                     </span>
                   )}
                 </div>
+                {periodFrame && periodStartsSegment && (
+                  <span
+                    className="pointer-events-none absolute left-1.5 top-6 z-10 truncate rounded px-1 py-0.5 text-[8px] font-semibold text-slate-900 md:left-2 md:top-7 md:text-[9px]"
+                    style={{ backgroundColor: periodFrame.color, maxWidth: "78%" }}
+                    title={`${periodFrame.title} (${periodFrame.startDate}〜${periodFrame.endDate})`}
+                  >
+                    {periodFrame.title}
+                  </span>
+                )}
+                {dayPeriodsInCell.length > 1 && (
+                  <span className="absolute right-1.5 bottom-1.5 rounded-full bg-amber-500/85 px-1.5 py-0.5 text-[8px] font-bold text-slate-900 md:right-2 md:bottom-2 md:text-[9px]">
+                    +{dayPeriodsInCell.length - 1}
+                  </span>
+                )}
                 {hasConflict && (
                   <span className="absolute left-1.5 bottom-1.5 rounded-full bg-rose-500/90 px-1.5 py-0.5 text-[8px] font-bold text-white md:left-2 md:bottom-2 md:text-[9px]">
                     競合
@@ -1237,6 +1364,108 @@ function App() {
                   </button>
                 </div>
               ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {isPeriodEditorOpen && (
+        <section
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm modal-backdrop-enter"
+          onClick={() => setIsPeriodEditorOpen(false)}
+        >
+          <div
+            className="modal-card-enter w-full max-w-xl rounded-2xl border border-slate-700 bg-slate-900 p-4 shadow-soft"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-sm font-semibold text-slate-100">期間イベント編集</p>
+              <button
+                className="rounded-lg border border-slate-500 px-2 py-1 text-xs font-semibold text-slate-200"
+                onClick={() => setIsPeriodEditorOpen(false)}
+              >
+                閉じる
+              </button>
+            </div>
+            <div className="mb-2 flex items-center justify-end">
+              <button
+                className="rounded-lg bg-amber-500/80 px-2 py-1 text-xs font-semibold text-slate-900"
+                onClick={() => {
+                  const seed = selectedDate || isoToday;
+                  persistPeriods([
+                    ...periods,
+                    {
+                      id: crypto.randomUUID(),
+                      title: "新しい期間",
+                      description: "",
+                      startDate: seed,
+                      endDate: seed,
+                      color: "#f59e0b"
+                    }
+                  ]);
+                }}
+              >
+                期間追加
+              </button>
+            </div>
+            <div className="max-h-[52vh] space-y-3 overflow-y-auto pr-1">
+              {periods.map((period) => (
+                <div key={period.id} className="space-y-2 rounded-xl border border-slate-700 bg-slate-800/60 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={period.color}
+                        className="h-8 w-8 rounded border border-slate-600 bg-transparent p-0"
+                        onChange={(e) =>
+                          persistPeriods(periods.map((item) => (item.id === period.id ? { ...item, color: e.target.value } : item)))
+                        }
+                      />
+                      <input
+                        value={period.title}
+                        className="rounded-md bg-slate-700 px-2 py-1.5 text-base"
+                        onChange={(e) =>
+                          persistPeriods(periods.map((item) => (item.id === period.id ? { ...item, title: e.target.value } : item)))
+                        }
+                      />
+                    </div>
+                    <button
+                      className="rounded-md bg-rose-500/80 px-2 py-1 text-xs font-semibold"
+                      onClick={() => persistPeriods(periods.filter((item) => item.id !== period.id))}
+                    >
+                      削除
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="date"
+                      className="rounded-md bg-slate-700 px-2 py-1.5 text-base"
+                      value={period.startDate}
+                      onChange={(e) =>
+                        persistPeriods(periods.map((item) => (item.id === period.id ? { ...item, startDate: e.target.value } : item)))
+                      }
+                    />
+                    <input
+                      type="date"
+                      className="rounded-md bg-slate-700 px-2 py-1.5 text-base"
+                      value={period.endDate}
+                      onChange={(e) =>
+                        persistPeriods(periods.map((item) => (item.id === period.id ? { ...item, endDate: e.target.value } : item)))
+                      }
+                    />
+                  </div>
+                  <textarea
+                    rows={2}
+                    className="w-full rounded-md bg-slate-700 px-2 py-1.5 text-base"
+                    value={period.description}
+                    placeholder="期間メモ（任意）"
+                    onChange={(e) =>
+                      persistPeriods(periods.map((item) => (item.id === period.id ? { ...item, description: e.target.value } : item)))
+                    }
+                  />
+                </div>
+              ))}
+              {periods.length === 0 && <p className="text-sm text-slate-400">期間イベントはまだありません。</p>}
             </div>
           </div>
         </section>
@@ -1360,6 +1589,20 @@ function App() {
           )}
         </div>
         <div ref={sheetListRef} data-sheet-scroll="true" className="max-h-[48vh] space-y-2 overflow-y-auto overscroll-contain touch-pan-y pr-1">
+          {dayPeriods.length > 0 && (
+            <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3">
+              <p className="mb-2 text-xs font-semibold text-amber-200">この日の期間イベント</p>
+              <div className="space-y-1.5">
+                {dayPeriods.map((period) => (
+                  <div key={`${period.id}_${selectedDate}`} className="rounded-lg px-2 py-1.5" style={{ backgroundColor: `${period.color}33` }}>
+                    <p className="text-xs font-semibold" style={{ color: period.color }}>{period.title}</p>
+                    <p className="text-[11px] text-slate-300">{period.startDate} 〜 {period.endDate}</p>
+                    {period.description && <p className="text-[11px] text-slate-400">{period.description}</p>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {dayItems.map((item, idx) => (
             <article key={item.id} className="schedule-card-enter rounded-2xl border border-slate-700 bg-slate-800 p-3" style={{ animationDelay: `${idx * 45}ms` }}>
               <ScheduleCard
