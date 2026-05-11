@@ -20,6 +20,16 @@ type GameSave = {
   claimedRewardIds: string[];
 };
 
+type CustomWeeklyQuest = {
+  id: string;
+  label: string;
+  type: "minutes" | "tag";
+  value?: number; // minutes の場合、分数
+  tagId?: string; // tag の場合、タグID
+  reward: number; // 報酬コイン
+  createdWeek?: string; // 作成週（optional、今は使わないが将来用）
+};
+
 type Announcement = {
   title: string;
   body: string;
@@ -27,6 +37,7 @@ type Announcement = {
 
 const STORAGE_KEY = "schedule-app-data-v1";
 const GAME_SAVE_KEY = "schedule-app-game-v1";
+const CUSTOM_WEEKLY_QUESTS_KEY = "schedule-app-custom-weekly-quests-v1";
 const DAILY_EXP_CAP = 180; // 1日上限 3時間
 
 function parseISO(iso: string): Date {
@@ -101,6 +112,10 @@ function uniqueSortedDates(dates: string[]): string[] {
   return [...new Set(dates)].sort((a, b) => (a < b ? 1 : -1));
 }
 
+function isScheduleStopwatchDerived(s: Schedule): boolean {
+  return s.source === "stopwatch";
+}
+
 function calcStreak(todayIso: string, activeDates: string[]): number {
   const set = new Set(activeDates);
   let streak = 0;
@@ -115,7 +130,9 @@ function calcStreak(todayIso: string, activeDates: string[]): number {
 export default function Game() {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [save, setSave] = useState<GameSave>({ coins: 0, claimedRewardIds: [] });
+  const [customWeeklyQuests, setCustomWeeklyQuests] = useState<CustomWeeklyQuest[]>([]);
   const [announcement, setAnnouncement] = useState<Announcement | null>(null);
+  const [isQuestModalOpen, setIsQuestModalOpen] = useState(false);
 
   const initializedRef = useRef(false);
   const prevLevelRef = useRef(1);
@@ -144,6 +161,16 @@ export default function Game() {
       }
     }
 
+    const questsRaw = localStorage.getItem(CUSTOM_WEEKLY_QUESTS_KEY);
+    if (questsRaw) {
+      try {
+        const parsed = JSON.parse(questsRaw) as CustomWeeklyQuest[];
+        if (Array.isArray(parsed)) setCustomWeeklyQuests(parsed);
+      } catch {
+        setCustomWeeklyQuests([]);
+      }
+    }
+
     const onStorage = (e: StorageEvent) => {
       if (e.key === STORAGE_KEY && e.newValue) {
         try {
@@ -163,6 +190,14 @@ export default function Game() {
           setSave({ coins: 0, claimedRewardIds: [] });
         }
       }
+      if (e.key === CUSTOM_WEEKLY_QUESTS_KEY && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue) as CustomWeeklyQuest[];
+          if (Array.isArray(parsed)) setCustomWeeklyQuests(parsed);
+        } catch {
+          setCustomWeeklyQuests([]);
+        }
+      }
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
@@ -171,6 +206,10 @@ export default function Game() {
   useEffect(() => {
     localStorage.setItem(GAME_SAVE_KEY, JSON.stringify(save));
   }, [save]);
+
+  useEffect(() => {
+    localStorage.setItem(CUSTOM_WEEKLY_QUESTS_KEY, JSON.stringify(customWeeklyQuests));
+  }, [customWeeklyQuests]);
 
   // ゲーム画面では全体スクロールを許可（カレンダー画面は従来どおり）
   useEffect(() => {
@@ -263,6 +302,28 @@ export default function Game() {
     { id: `weekly-420-${weekKey}`, label: "ウィークリー: 週7時間(420分)", done: weekMinutes >= 420, reward: 220 },
     { id: `weekly-active4-${weekKey}`, label: "ウィークリー: 4日以上活動", done: weekActiveDays >= 4, reward: 160 },
   ];
+
+  // カスタムクエスト判定
+  const customWeeklyQuestChecks = useMemo(() => {
+    return customWeeklyQuests.map((cq) => {
+      let done = false;
+      if (cq.type === "minutes" && cq.value !== undefined) {
+        done = weekMinutes >= cq.value;
+      } else if (cq.type === "tag" && cq.tagId) {
+        const weekTagMinutes = tracked
+          .filter((s) => s.date >= weekStartIso && s.date <= weekEndIso && s.tagId === cq.tagId)
+          .reduce((sum, s) => sum + s.effective, 0);
+        done = weekTagMinutes > 0; // タグ付き予定が1つでもあれば達成
+      }
+      return {
+        id: `custom-${cq.id}-${weekKey}`,
+        label: cq.label,
+        done,
+        reward: cq.reward,
+        originalId: cq.id,
+      };
+    });
+  }, [customWeeklyQuests, weekMinutes, tracked, weekStartIso, weekEndIso, weekKey]);
 
   const bossMaxHp = 800 + level * 40;
   const bossDamage = Math.min(bossMaxHp, weekMinutes + weekSessions * 15 + streak * 20);
@@ -363,9 +424,17 @@ export default function Game() {
 
         <section className="grid gap-3 md:grid-cols-2">
           <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
-            <h2 className="text-sm font-semibold text-fuchsia-300">デイリー/ウィークリークエスト</h2>
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-fuchsia-300">デイリー/ウィークリークエスト</h2>
+              <button
+                onClick={() => setIsQuestModalOpen(true)}
+                className="rounded-md bg-fuchsia-600 px-2 py-1 text-xs font-semibold text-white transition hover:bg-fuchsia-500"
+              >
+                + クエスト追加
+              </button>
+            </div>
             <div className="mt-3 max-h-[34vh] space-y-2 overflow-y-auto pr-1 md:max-h-none">
-              {[...dailyQuestDefs, ...weeklyQuestDefs].map((q) => {
+              {[...dailyQuestDefs, ...weeklyQuestDefs, ...customWeeklyQuestChecks].map((q) => {
                 const claimed = save.claimedRewardIds.includes(q.id);
                 return (
                   <div key={q.id} className="rounded-lg border border-slate-700 bg-slate-800/70 px-3 py-2">
@@ -461,6 +530,27 @@ export default function Game() {
         </section>
       </section>
 
+      {isQuestModalOpen && (
+        <section
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm"
+          onClick={() => setIsQuestModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-4 shadow-soft"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="mb-3 text-sm font-semibold text-fuchsia-300">\u65b0\u3057\u3044\u30af\u30a8\u30b9\u30c8\u3092\u8ffd\u52a0</h2>
+            <QuestCreationForm
+              onAdd={(newQuest) => {
+                setCustomWeeklyQuests([...customWeeklyQuests, newQuest]);
+                setIsQuestModalOpen(false);
+              }}
+              onCancel={() => setIsQuestModalOpen(false)}
+            />
+          </div>
+        </section>
+      )}
+
       {announcement && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/70 px-4">
           <div className="w-full max-w-sm rounded-2xl border border-amber-300/50 bg-slate-900 p-5 text-center shadow-[0_0_40px_rgba(251,191,36,.25)]">
@@ -493,6 +583,138 @@ function StatusRow({ label, value }: { label: string; value: number }) {
     <div className="rounded-lg border border-slate-700 bg-slate-800/60 px-3 py-2">
       <p className="text-[11px] text-slate-400">{label}</p>
       <p className="text-base font-bold text-slate-100">{value}</p>
+    </div>
+  );
+}
+
+function QuestCreationForm({
+  onAdd,
+  onCancel,
+}: {
+  onAdd: (quest: CustomWeeklyQuest) => void;
+  onCancel: () => void;
+}) {
+  const [questType, setQuestType] = useState<"minutes" | "tag">("minutes");
+  const [label, setLabel] = useState("");
+  const [value, setValue] = useState("360"); // デフォルト6時間
+  const [reward, setReward] = useState("150");
+  const [tagId, setTagId] = useState("");
+
+  const handleAdd = () => {
+    if (!label.trim()) {
+      alert("クエスト名を入力してください");
+      return;
+    }
+    if (questType === "minutes" && (!value || isNaN(Number(value)) || Number(value) <= 0)) {
+      alert("正の時間を入力してください");
+      return;
+    }
+    if (questType === "tag" && !tagId.trim()) {
+      alert("タグを選択してください");
+      return;
+    }
+    if (!reward || isNaN(Number(reward)) || Number(reward) <= 0) {
+      alert("正の報酬を入力してください");
+      return;
+    }
+
+    const newQuest: CustomWeeklyQuest = {
+      id: crypto.randomUUID(),
+      label: label.trim(),
+      type: questType,
+      value: questType === "minutes" ? Number(value) : undefined,
+      tagId: questType === "tag" ? tagId : undefined,
+      reward: Number(reward),
+    };
+
+    onAdd(newQuest);
+  };
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <label className="block text-xs text-slate-300 mb-1">クエスト名</label>
+        <input
+          type="text"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          placeholder="例: 週6時間プログラミング"
+          className="w-full rounded-lg bg-slate-700 px-2 py-1.5 text-sm text-slate-100"
+        />
+      </div>
+      <div>
+        <label className="block text-xs text-slate-300 mb-1">達成条件</label>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setQuestType("minutes")}
+            className={`flex-1 rounded-md px-2 py-1 text-xs font-semibold ${
+              questType === "minutes"
+                ? "bg-cyan-500 text-slate-900"
+                : "bg-slate-700 text-slate-300"
+            }`}
+          >
+            時間記録
+          </button>
+          <button
+            onClick={() => setQuestType("tag")}
+            className={`flex-1 rounded-md px-2 py-1 text-xs font-semibold ${
+              questType === "tag" ? "bg-cyan-500 text-slate-900" : "bg-slate-700 text-slate-300"
+            }`}
+          >
+            タグ指定
+          </button>
+        </div>
+      </div>
+      {questType === "minutes" ? (
+        <div>
+          <label className="block text-xs text-slate-300 mb-1">目標時間（分）</label>
+          <input
+            type="number"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder="360"
+            min="1"
+            className="w-full rounded-lg bg-slate-700 px-2 py-1.5 text-sm text-slate-100"
+          />
+          <p className="mt-1 text-[10px] text-slate-400">{Math.floor(Number(value) / 60)}時間{Number(value) % 60}分</p>
+        </div>
+      ) : (
+        <div>
+          <label className="block text-xs text-slate-300 mb-1">タグ名（例: 仕事、勉強）</label>
+          <input
+            type="text"
+            value={tagId}
+            onChange={(e) => setTagId(e.target.value)}
+            placeholder="タグ名を入力"
+            className="w-full rounded-lg bg-slate-700 px-2 py-1.5 text-sm text-slate-100"
+          />
+        </div>
+      )}
+      <div>
+        <label className="block text-xs text-slate-300 mb-1">報酬コイン</label>
+        <input
+          type="number"
+          value={reward}
+          onChange={(e) => setReward(e.target.value)}
+          placeholder="150"
+          min="1"
+          className="w-full rounded-lg bg-slate-700 px-2 py-1.5 text-sm text-slate-100"
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-2 pt-2">
+        <button
+          onClick={onCancel}
+          className="rounded-lg bg-slate-700 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-600"
+        >
+          キャンセル
+        </button>
+        <button
+          onClick={handleAdd}
+          className="rounded-lg bg-fuchsia-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-fuchsia-500"
+        >
+          追加
+        </button>
+      </div>
     </div>
   );
 }
